@@ -1,0 +1,87 @@
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+
+  --ink: #eaf6ff;
+  --mint: #7dffd8;
+  --amber: #ffb35c;
+  --ice: #9db8ff;
+  --panel: rgba(10, 14, 22, 0.82);
+  --line: rgba(234, 246, 255, 0.35);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  background: #151b2c;
+  font-family: 'Space Mono', monospace;
+  color: var(--ink);
+}
+
+#app {
+  position: absolute;
+  inset: 0;
+}
+
+.screen {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: calc(16px + var(--sat)) calc(16px + var(--sar)) calc(16px + var(--sab))
+    calc(16px + var(--sal));
+}
+
+.retro-btn {
+  font-family: 'Space Mono', monospace;
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.35em;
+  text-indent: 0.35em;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
+  padding: 14px 34px;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: all 0.15s ease;
+  text-shadow: 0 0 8px rgba(125, 255, 216, 0.7);
+}
+
+.retro-btn:hover,
+.retro-btn:active {
+  border-color: var(--mint);
+  color: var(--mint);
+  box-shadow: 0 0 14px rgba(125, 255, 216, 0.35), inset 0 0 14px rgba(125, 255, 216, 0.12);
+}
+
+.retro-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  box-shadow: none;
+}
+
+.points-chip {
+  font-size: 14px;
+  letter-spacing: 0.2em;
+  color: var(--mint);
+  text-shadow: 0 0 8px rgba(125, 255, 216, 0.7);
+}
