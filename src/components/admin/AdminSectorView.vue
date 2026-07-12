@@ -29,7 +29,11 @@ const form = reactive({
   resourceType: 'none',
   resourceRich: false,
   clear: false,
+  role: '',
+  noEnemies: false,
 })
+
+const ROLE_PIN_OPTIONS = ['core', 'inner', 'temperate', 'belt', 'giants', 'icy', 'fringe']
 
 const cells = computed(() => {
   version.value // dependency for refresh
@@ -52,6 +56,8 @@ const cells = computed(() => {
           : null,
         anomaly: !!spec.anomaly,
         enemies: spec.enemies.length,
+        rocks: spec.asteroids.length,
+        role: spec.role?.special || spec.role?.ring || '',
         pinned: !!authored.panels[panelKey(px, py)],
       })
     }
@@ -72,6 +78,8 @@ function select(cell) {
   form.resourceType = pin.resource?.type || 'none'
   form.resourceRich = !!pin.resource?.rich
   form.clear = !!pin.clear
+  form.role = pin.role || ''
+  form.noEnemies = !!pin.noEnemies
 }
 
 function savePin() {
@@ -87,6 +95,8 @@ function savePin() {
     pin.resource = { type: form.resourceType, rich: form.resourceRich }
   }
   if (form.clear) pin.clear = true
+  if (form.role) pin.role = form.role
+  if (form.noEnemies) pin.noEnemies = true
 
   const copy = getWorkingCopy()
   const next = { sectors: { ...copy.sectors }, panels: { ...copy.panels } }
@@ -106,6 +116,8 @@ function removePin() {
   form.resourceType = 'none'
   form.resourceRich = false
   form.clear = false
+  form.role = ''
+  form.noEnemies = false
   savePin()
 }
 
@@ -191,6 +203,16 @@ function flyHere() {
           <label v-if="form.resourceType !== 'none'" class="check">
             <input v-model="form.resourceRich" type="checkbox" /> rich vein
           </label>
+        </div>
+        <div class="field">
+          <label>role override</label>
+          <select v-model="form.role">
+            <option value="">— procedural (sector layout) —</option>
+            <option v-for="r in ROLE_PIN_OPTIONS" :key="r" :value="r">{{ r }}</option>
+          </select>
+        </div>
+        <div class="field check">
+          <label><input v-model="form.noEnemies" type="checkbox" /> no enemies here</label>
         </div>
         <div class="field check">
           <label><input v-model="form.clear" type="checkbox" /> clear panel (empty space)</label>

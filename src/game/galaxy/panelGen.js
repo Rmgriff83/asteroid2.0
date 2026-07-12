@@ -3,11 +3,12 @@
 //
 // Per-channel RNG discipline: every subsystem draws from its OWN stream so
 // features added in later phases never shift existing panels' content.
-import { panelSeed, sectorSeed, channelRng } from './seeds'
-import { CH, PANEL_W, PANEL_H, ASTEROID_TIERS, SECTOR_SIZE } from './constants'
+import { panelSeed, channelRng } from './seeds'
+import { CH, PANEL_W, PANEL_H, ASTEROID_TIERS } from './constants'
 import { resolveSector, sectorOf, RESOURCE_TYPES } from './sectorProps'
+import { resolveSectorLayout, panelRole, roleParams, ROLE_PARAMS } from './sectorLayout'
 import { starWellSpec, STAR_TYPES } from '../data/stars'
-import { makeAsteroidVerts, randRange } from '../utils/geometry'
+import { makeAsteroidVerts, randRange, planetCaptureRadius } from '../utils/geometry'
 import { PANEL_COLORS } from '../data/palette'
 import { hash32 } from '../utils/rng'
 import { ENEMY_ROLES, FLAVOR_SPAWNS } from '../data/enemies'
@@ -26,28 +27,20 @@ export function panelBgColor(px, py, paletteBias = 0) {
 }
 
 // Which panels of a sector host its guaranteed star systems, and their types.
-// Pure + seeded (CH.STARS) — identical forever. Pass the resolved sector if
-// you already have it to skip re-resolution.
-export function sectorStarAssignments(galaxySeed, sx, sy, authored = null, sectorOpt = null) {
-  const sector = sectorOpt || resolveSector(galaxySeed, sx, sy, authored)
-  const rng = channelRng(sectorSeed(galaxySeed, sx, sy), CH.STARS)
-  const assignments = new Map()
-  const count = Math.max(0, Math.min(3, Math.round(sector.starCount ?? 1)))
-  const used = new Set()
-  for (let i = 0; i < count; i++) {
-    let dx
-    let dy
-    let tries = 0
-    do {
-      dx = Math.floor(rng() * SECTOR_SIZE)
-      dy = Math.floor(rng() * SECTOR_SIZE)
-      tries++
-    } while (used.has(`${dx},${dy}`) && tries < 24)
-    used.add(`${dx},${dy}`)
-    const type = pickWeighted(rng, sector.starWeights) || 'main-sequence'
-    assignments.set(panelKey(sx * SECTOR_SIZE + dx, sy * SECTOR_SIZE + dy), type)
-  }
-  return assignments
+// Delegates to the sector layout (systems sit at ring centers) — kept as a
+// named export for existing consumers (__zen.debug, admin).
+export function sectorStarAssignments(galaxySeed, sx, sy, authored = null) {
+  return resolveSectorLayout(galaxySeed, sx, sy, authored).starAssignments
+}
+
+// multiply a weights object by a sparse bias map
+function biasWeights(weights, bias) {
+  if (!bias) return weights
+  const keys = Object.keys(bias)
+  if (!keys.length) return weights
+  const out = {}
+  for (const [k, w] of Object.entries(weights)) out[k] = w * (bias[k] ?? 1)
+  return out
 }
 
 function pickWeighted(rng, weightsObj) {
@@ -66,7 +59,15 @@ export function generatePanel(galaxySeed, px, py, authored = null) {
   const seed = panelSeed(galaxySeed, px, py)
   const { sx, sy } = sectorOf(px, py)
   const sector = resolveSector(galaxySeed, sx, sy, authored)
+  const layout = resolveSectorLayout(galaxySeed, sx, sy, authored)
   const pin = authored?.panels?.[panelKey(px, py)] || null
+
+  // panel role from the sector layout; an authored pin can substitute a ring
+  let role = panelRole(layout, px, py)
+  if (pin?.role && ROLE_PARAMS[pin.role]) {
+    role = { ring: pin.role, systemIdx: -1, u: 0.5, ang: 0, special: null }
+  }
+  const params = roleParams(role)
 
   const spec = {
     px,
@@ -74,19 +75,26 @@ export function generatePanel(galaxySeed, px, py, authored = null) {
     seed,
     sector,
     pin,
+    role: { ring: role.ring, special: role.special, systemIdx: role.systemIdx, u: role.u },
     bgColor: panelBgColor(px, py, sector.paletteBias),
     well: null,
     planet: null,
-    station: null, // phase 6
+    station: null,
     asteroids: [],
-    enemies: [], // phase 5
+    enemies: [],
   }
 
   // --- planet (CH.PLANET stream) ---
   const planetRng = channelRng(seed, CH.PLANET)
-  const wantPlanet = pin?.planet || (!pin?.clear && planetRng() < 0.16 + sector.density * 0.1)
+  const isGiantAnchor = role.special === 'giant-anchor'
+  const planetChance = planetRng() // always drawn — keeps the stream aligned
+  const wantPlanet =
+    pin?.planet || isGiantAnchor || (!pin?.clear && params.planet > 0 && planetChance < params.planet)
   if (wantPlanet) {
-    const type = pin?.planet?.type || pickWeighted(planetRng, sector.planetWeights) || 'rocky'
+    const typeWeights = isGiantAnchor
+      ? { gas: 0.5, ringed: 0.3, ice: 0.2 }
+      : biasWeights(sector.planetWeights, layout.remnant ? { ice: 2, lava: 0.3, ...params.planetBias } : params.planetBias)
+    const type = pin?.planet?.type || pickWeighted(planetRng, typeWeights) || 'rocky'
     const radius = pin?.planet?.size || randRange(planetRng, 85, 150)
     const margin = radius + 70
     const x = randRange(planetRng, margin, PANEL_W - margin)
@@ -107,7 +115,7 @@ export function generatePanel(galaxySeed, px, py, authored = null) {
       y,
       radius,
       nodes,
-      baseSite: planetRng() < 0.35,
+      baseSite: planetRng() < params.baseSite,
       visualSeed: hash32(seed, CH.PLANET),
       // standard gravitational parameter μ = G·M; planets pull noticeably
       // weaker than stars (r=150 → 1.6e6 vs red dwarf 2.2e6)
@@ -145,28 +153,45 @@ export function generatePanel(galaxySeed, px, py, authored = null) {
       spec.well = { ...starWellSpec(starType, x, y, visualSeed) }
     }
   } else if (!pin?.clear) {
-    const assignedType = sectorStarAssignments(galaxySeed, sx, sy, authored, sector).get(
-      panelKey(px, py)
-    )
+    const assignedType = layout.starAssignments.get(panelKey(px, py))
     if (assignedType) {
       spec.well = { ...starWellSpec(assignedType, x, y, visualSeed) }
-    } else if (wellRng() < 0.04 + sector.danger * 0.05) {
-      // black holes stay a per-panel danger roll
+    } else if (role.special === 'blackhole') {
+      // black holes are a sector-layout decision (fringe placement)
       spec.well = { kind: 'blackhole', x, y, strength: 5.2e6, minDist: 130, killRadius: 55, visualSeed }
     }
   }
 
-  // --- asteroids (CH.ROCKS stream) ---
+  // --- asteroids (CH.ROCKS stream) — count/size/speed shaped by role ---
   const rockRng = channelRng(seed, CH.ROCKS)
-  const count = pin?.clear ? 0 : Math.round(3 + sector.density * 5 + rockRng() * 2)
+  const [rockMin, rockMax] = params.rocks
+  const beltBonus = role.ring === 'belt' && !role.special ? Math.floor(sector.density * 2) : 0
+  let count = pin?.clear
+    ? 0
+    : rockMin + Math.floor(rockRng() * (rockMax - rockMin + 1)) + beltBonus
+  // full-density fields only exist in open space: a planet or well would drag
+  // them in constantly, so gravity-source panels thin to a stable handful
+  if (spec.planet || spec.well) count = Math.min(count, 5)
+  const [pLarge, pMed] = params.tiers
+  const [speedLo, speedHi] = params.debrisSpeed || [20, 70]
   for (let i = 0; i < count; i++) {
     const roll = rockRng()
-    const radius =
-      roll < 0.5 ? ASTEROID_TIERS[0] : roll < 0.8 ? ASTEROID_TIERS[1] : ASTEROID_TIERS[2]
+    let radius =
+      roll < pLarge ? ASTEROID_TIERS[0] : roll < pLarge + pMed ? ASTEROID_TIERS[1] : ASTEROID_TIERS[2]
     const x = randRange(rockRng, radius, PANEL_W - radius)
     const y = randRange(rockRng, radius, PANEL_H - radius)
+    // rocks born inside a planet's capture boundary are pre-shattered ring
+    // material — full-size rocks would tidally break up anyway (draw-neutral:
+    // radius only rescales the verts below)
+    if (
+      spec.planet &&
+      radius >= ASTEROID_TIERS[0] &&
+      Math.hypot(x - spec.planet.x, y - spec.planet.y) < planetCaptureRadius(spec.planet.radius)
+    ) {
+      radius = ASTEROID_TIERS[1]
+    }
     const ang = rockRng() * TAU
-    const speed = randRange(rockRng, 20, 70)
+    const speed = randRange(rockRng, speedLo, speedHi)
     const verts = makeAsteroidVerts(rockRng, radius)
     const spin = randRange(rockRng, -1.5, 1.5)
     spec.asteroids.push({
@@ -182,21 +207,42 @@ export function generatePanel(galaxySeed, px, py, authored = null) {
     })
   }
 
-  // --- minerals (CH.MINERAL stream) ---
+  // --- minerals (CH.MINERAL stream) — rate and composition by role ---
   const mineralRng = channelRng(seed, CH.MINERAL)
+  const mineralRate =
+    params.flatMineralRate ??
+    Math.min(0.9, (0.25 + sector.richness * 0.35) * params.minMult * (layout.remnant ? 0.7 : 1))
+  // the belt splits stony (sunward half) / carbonaceous (outer half)
+  const beltBias =
+    role.ring === 'belt' && !role.special
+      ? role.u < 0.58
+        ? { silicate: 1.4, ferrite: 1.3 }
+        : { ice: 1.5, ammonia: 1.3, spores: 1.2 }
+      : null
+  const mineralWeights = biasWeights(sector.resourceWeights, beltBias || params.resBias)
   for (const a of spec.asteroids) {
     const forced = pin?.resource && mineralRng() < 0.6
-    if (forced || mineralRng() < 0.25 + sector.richness * 0.35) {
+    if (forced || mineralRng() < mineralRate) {
       a.mineral = {
-        type: forced ? pin.resource.type : pickWeighted(mineralRng, sector.resourceWeights) || 'ferrite',
+        type:
+          role.special === 'family' && !forced
+            ? role.familyResource || 'ferrite'
+            : forced
+              ? pin.resource.type
+              : pickWeighted(mineralRng, mineralWeights) || 'ferrite',
         amount: 1 + Math.floor(mineralRng() * 3) + (pin?.resource?.rich ? 2 : 0),
       }
     }
   }
 
-  // --- station (CH.STATION stream) ---
+  // --- station (CH.STATION stream) — hubs guaranteed, elsewhere by role ---
   const stationRng = channelRng(seed, CH.STATION)
-  if (pin?.station || (!pin?.clear && stationRng() < sector.stationDensity)) {
+  const stationChance = Math.min(0.5, sector.stationDensity * params.stMult)
+  if (
+    pin?.station ||
+    role.special === 'hub' ||
+    (!pin?.clear && stationRng() < stationChance)
+  ) {
     let x = randRange(stationRng, 220, PANEL_W - 220)
     let y = randRange(stationRng, 180, PANEL_H - 180)
     if (spec.planet && Math.hypot(x - spec.planet.x, y - spec.planet.y) < spec.planet.radius + 220) {
@@ -216,11 +262,32 @@ export function generatePanel(galaxySeed, px, py, authored = null) {
     }
   }
 
+  // rocks born inside a planet's capture boundary start in its ring —
+  // tangential circular orbits, jitter/parity from the ALREADY-drawn speed
+  // roll (zero new RNG draws, so rock layouts stay byte-identical)
+  if (spec.planet) {
+    const captureR = planetCaptureRadius(spec.planet.radius)
+    for (const a of spec.asteroids) {
+      const dx = a.x - spec.planet.x
+      const dy = a.y - spec.planet.y
+      const r = Math.hypot(dx, dy)
+      if (r < spec.planet.radius + 30 || r > captureR) continue
+      const vCirc = Math.min(150, Math.sqrt(spec.planet.mu / r))
+      const oldSpeed = Math.hypot(a.vx, a.vy)
+      const jitter = 0.9 + ((oldSpeed - 20) / 90) * 0.2
+      const sign = Math.atan2(a.vy, a.vx) > 0 ? 1 : -1
+      a.vx = (-dy / r) * sign * vCirc * jitter
+      a.vy = (dx / r) * sign * vCirc * jitter
+      a.ringBit = true // planet capture wins over well seeding below
+    }
+  }
+
   // rocks near a well get seeded onto REAL circular orbits: v = √(μ/r)
   // tangential, ±15% jitter derived from the ALREADY-drawn speed roll —
   // zero new RNG draws, so rock layouts stay byte-identical
   if (spec.well) {
     for (const a of spec.asteroids) {
+      if (a.ringBit) continue
       const dx = a.x - spec.well.x
       const dy = a.y - spec.well.y
       const r = Math.hypot(dx, dy)
@@ -237,7 +304,8 @@ export function generatePanel(galaxySeed, px, py, authored = null) {
   // --- anomaly / lore beacon (CH.AMBIENT stream) ---
   const ambientRng = channelRng(seed, CH.AMBIENT)
   const anomalyRoll = ambientRng()
-  if (pin?.anomaly || (!pin?.clear && anomalyRoll < 0.018)) {
+  const anomalyRate = 0.018 * params.anMult * (layout.remnant ? 1.5 : 1)
+  if (pin?.anomaly || (!pin?.clear && anomalyRoll < anomalyRate)) {
     spec.anomaly = {
       dialogueId:
         typeof pin?.anomaly === 'string'
@@ -248,12 +316,33 @@ export function generatePanel(galaxySeed, px, py, authored = null) {
     }
   }
 
-  // --- enemies (CH.ENEMY stream) ---
+  // --- vista (appended to the AMBIENT stream): calm panels still offer
+  //     something to look at — a non-interactive backdrop sight ---
+  const vistaChance =
+    role.ring === 'fringe' || role.ring === 'icy' ? 0.35 : spec.asteroids.length <= 4 ? 0.12 : 0
+  const vistaRoll = ambientRng()
+  if (!pin?.clear && vistaRoll < vistaChance) {
+    const kinds = ['comet', 'derelict', 'far-planet']
+    spec.vista = {
+      kind: kinds[Math.floor(ambientRng() * kinds.length)],
+      x: randRange(ambientRng, 100, PANEL_W - 100),
+      y: randRange(ambientRng, 100, PANEL_H - 100),
+      drift: randRange(ambientRng, 2, 10),
+      visualSeed: hash32(seed, CH.AMBIENT),
+    }
+  }
+
+  // --- enemies (CH.ENEMY stream) — clustered where value clusters ---
   const enemyRng = channelRng(seed, CH.ENEMY)
   const table = FLAVOR_SPAWNS[sector.enemyFlavor]
-  // enemies appear in a fraction of panels within hostile sectors
-  if (table && !pin?.clear && enemyRng() < 0.35 + sector.danger * 0.3) {
-    const count = table.count[0] + Math.floor(enemyRng() * (table.count[1] - table.count[0] + 1))
+  // planets attract raiders — their mineable nodes are worth guarding
+  const planetGuard = spec.planet ? 1.8 : 1
+  const enemyGate = Math.min(0.85, (0.35 + sector.danger * 0.3) * params.enMult * planetGuard)
+  if (table && !pin?.clear && !pin?.noEnemies && enemyRng() < enemyGate) {
+    const count =
+      table.count[0] +
+      Math.floor(enemyRng() * (table.count[1] - table.count[0] + 1)) +
+      (params.enCountBonus || 0)
     const dangerScale = 0.8 + sector.danger * 0.5
     for (let i = 0; i < count; i++) {
       const role = pickWeighted(enemyRng, table.roles) || 'kiter'

@@ -9,6 +9,10 @@ export const GALAXY_CENTER = { sx: 0, sy: 0 }
 // Rolled per campaign later (stored in meta); fixed default for dev.
 export const DEFAULT_GALAXY_SEED = 0x5eed5eed
 
+// Bumped when generation output changes shape/meaning — a mismatch against the
+// saved meta re-rolls the world (diffs wiped, player profile kept).
+export const GEN_VERSION = 2
+
 // Per-subsystem RNG channels. Each subsystem draws from its own derived
 // stream so adding a feature later never shifts existing panels' content.
 export const CH = {
@@ -21,8 +25,9 @@ export const CH = {
   AMBIENT: 7,
   STATION: 8,
   NAMING: 9,
-  STARS: 10, // sector-level star panel assignment
+  STARS: 10, // superseded by LAYOUT (kept reserved — never reuse)
   STARFIELD: 11, // per-panel background star layer
+  LAYOUT: 12, // sector-level system placement + panel roles
 }
 
 // Asteroid size tiers (logical units)

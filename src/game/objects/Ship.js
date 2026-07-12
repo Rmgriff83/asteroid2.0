@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { strokeGlowPoly, strokeGlowLine } from '../utils/geometry'
 import { getShip } from '../data/ships'
+import { getShipAccent } from '../data/accents'
 import { DEFAULT_STATS } from '../systems/modifiers'
 import { playerStore } from '../../stores/playerStore'
 
@@ -54,10 +55,11 @@ export default class Ship extends Phaser.GameObjects.Container {
 
   setShip(shipId) {
     this.def = getShip(shipId)
+    this.accentInt = getShipAccent(shipId).int
     this.gfx.clear()
-    strokeGlowPoly(this.gfx, this.def.verts, this.def.color)
+    strokeGlowPoly(this.gfx, this.def.verts, this.accentInt)
     for (const [[x1, y1], [x2, y2]] of this.def.extraLines) {
-      strokeGlowLine(this.gfx, x1, y1, x2, y2, this.def.color)
+      strokeGlowLine(this.gfx, x1, y1, x2, y2, this.accentInt)
     }
   }
 
@@ -119,7 +121,8 @@ export default class Ship extends Phaser.GameObjects.Container {
     if (!this.thrusting) return
     const flicker = 0.7 + 0.3 * Math.sin(time * 0.045)
     const len = (boosting ? 22 : 13) * flicker
-    const color = boosting ? 0xffb35c : 0x7dffd8
+    // boost burn stays warn amber; normal exhaust matches the hull accent
+    const color = boosting ? 0xffb35c : this.accentInt
     const back = Math.min(...this.def.verts.map(([x]) => x)) - 1
     this.flame.lineStyle(5, color, 0.15)
     this.flame.strokePoints(

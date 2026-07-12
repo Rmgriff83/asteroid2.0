@@ -14,10 +14,12 @@ import { resolveSector, sectorOf } from '../game/galaxy/sectorProps'
 import { getAuthored } from '../game/galaxy/authored'
 import { worldState } from '../game/systems/WorldDiffs'
 import ItemIcon from './ItemIcon.vue'
-import CockpitWindow from './CockpitWindow.vue'
+import ShipTintPanel from './ShipTintPanel.vue'
 
 const GRID_MAX = 24
 const BAY_COST_BASE = 120
+
+const emit = defineEmits(['close'])
 
 const selected = ref([]) // ordered block indices
 const tab = ref('readout')
@@ -219,17 +221,14 @@ function upgradeBay() {
   }
 }
 
+// the cockpit shell decides what closing means (stow vs. exit to game)
 function close() {
-  playerStore.screen = 'game'
-  playerStore.paused = false
-  EventBus.emit('resume-game')
+  emit('close')
 }
 </script>
 
 <template>
   <div class="screen cargo-page">
-    <CockpitWindow />
-    <div class="page-scanlines"></div>
     <div class="fit" :style="{ transform: `scale(${fitScale})` }">
       <div class="console" :style="{ '--float-amp': (shipDef.bobAmp ?? 4) * 0.7 + 'px' }">
         <div class="plate">CARGO SYSTEMS TERMINAL</div>
@@ -295,6 +294,7 @@ function close() {
                 <div class="tabs">
                   <button class="tab" :class="{ on: tab === 'readout' }" @pointerup="tab = 'readout'">READOUT</button>
                   <button class="tab" :class="{ on: tab === 'craft' }" @pointerup="tab = 'craft'">CRAFTING</button>
+                  <button class="tab" :class="{ on: tab === 'ship' }" @pointerup="tab = 'ship'">SHIP</button>
                   <span class="spacer"></span>
                   <template v-if="validSelected.length">
                     <span class="selcount">◆ {{ validSelected.length }} SELECTED</span>
@@ -332,6 +332,15 @@ function close() {
                       </button>
                     </div>
                   </template>
+                </div>
+
+                <!-- SHIP (hull tint & ship config) -->
+                <div v-else-if="tab === 'ship'" class="pane">
+                  <div class="ship-pane-head">
+                    <span class="ship-pane-name">{{ shipDef.name }}</span>
+                    <span class="ship-pane-sub">HULL CONFIGURATION</span>
+                  </div>
+                  <ShipTintPanel />
                 </div>
 
                 <!-- CRAFTING -->
@@ -416,22 +425,12 @@ function close() {
 </template>
 
 <style scoped>
+/* backdrop (space view + scanlines) is owned by the cockpit shell */
 .cargo-page {
-  background: #04060b;
   padding: 0;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-}
-
-/* scanlines over EVERYTHING — space and console alike, one retro display */
-.page-scanlines {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  pointer-events: none;
-  background: repeating-linear-gradient(to bottom, transparent 0 4px, rgba(0, 0, 0, 0.22) 4px 6px);
-  opacity: 0.35;
 }
 
 .fit {
@@ -501,7 +500,7 @@ function close() {
 }
 
 .fx.flicker {
-  background: rgba(125, 255, 216, 0.1);
+  background: rgba(var(--ck-accent-rgb, 125, 255, 216), 0.1);
   mix-blend-mode: screen;
   animation: flick 8s steps(1) infinite;
   z-index: 8;
@@ -555,7 +554,7 @@ function close() {
 }
 
 .ship-name { color: var(--ink); letter-spacing: 2px; }
-.sys { color: var(--mint); text-shadow: 0 0 10px rgba(125, 255, 216, 0.6); }
+.sys { color: var(--mint); text-shadow: 0 0 10px rgba(var(--ck-accent-rgb, 125, 255, 216), 0.6); }
 
 .cursor {
   width: 10px;
@@ -615,7 +614,7 @@ function close() {
   width: 104px;
   height: 104px;
   background: transparent;
-  border: 1px solid rgba(125, 255, 216, 0.22);
+  border: 1px solid rgba(var(--ck-accent-rgb, 125, 255, 216), 0.22);
   box-sizing: border-box;
   font-family: inherit;
   padding: 0;
@@ -626,7 +625,7 @@ function close() {
 
 .cell.block.selected {
   border: 1.5px solid var(--mint);
-  box-shadow: inset 0 0 14px rgba(125, 255, 216, 0.12);
+  box-shadow: inset 0 0 14px rgba(var(--ck-accent-rgb, 125, 255, 216), 0.12);
 }
 
 .rdot { position: absolute; top: 8px; left: 8px; width: 6px; height: 6px; border-radius: 50%; }
@@ -674,9 +673,9 @@ function close() {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(125, 255, 216, 0.3);
+  color: rgba(var(--ck-accent-rgb, 125, 255, 216), 0.3);
   font-size: 20px;
-  border-color: rgba(125, 255, 216, 0.12);
+  border-color: rgba(var(--ck-accent-rgb, 125, 255, 216), 0.12);
 }
 
 .cell.locked {
@@ -699,7 +698,7 @@ function close() {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid rgba(125, 255, 216, 0.18);
+  border-left: 1px solid rgba(var(--ck-accent-rgb, 125, 255, 216), 0.18);
   padding-left: 28px;
 }
 
@@ -739,6 +738,10 @@ function close() {
 
 .pane { padding-top: 16px; display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
 
+.ship-pane-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+.ship-pane-name { font-size: 22px; font-weight: 700; color: #f2f5f2; letter-spacing: 1px; }
+.ship-pane-sub { font-size: 10px; letter-spacing: 2px; color: #6f7a74; }
+
 .empty-msg {
   flex: 1;
   display: flex;
@@ -756,7 +759,7 @@ function close() {
 .ro-iconbox {
   width: 76px;
   height: 76px;
-  border: 1px solid rgba(125, 255, 216, 0.25);
+  border: 1px solid rgba(var(--ck-accent-rgb, 125, 255, 216), 0.25);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -820,7 +823,7 @@ function close() {
   letter-spacing: 1px;
   color: var(--mint);
   background: none;
-  border: 1px solid rgba(125, 255, 216, 0.3);
+  border: 1px solid rgba(var(--ck-accent-rgb, 125, 255, 216), 0.3);
   padding: 4px 8px;
   cursor: pointer;
 }
@@ -836,7 +839,7 @@ function close() {
 .recipes { overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 10px; padding-right: 6px; }
 
 .recipe {
-  border: 1px solid rgba(125, 255, 216, 0.2);
+  border: 1px solid rgba(var(--ck-accent-rgb, 125, 255, 216), 0.2);
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
@@ -849,7 +852,7 @@ function close() {
 .r-iconbox {
   width: 38px;
   height: 38px;
-  border: 1px solid rgba(125, 255, 216, 0.25);
+  border: 1px solid rgba(var(--ck-accent-rgb, 125, 255, 216), 0.25);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -901,7 +904,7 @@ function close() {
 
 /* footer */
 .term-foot {
-  border-top: 1px solid rgba(125, 255, 216, 0.18);
+  border-top: 1px solid rgba(var(--ck-accent-rgb, 125, 255, 216), 0.18);
   padding-top: 12px;
   display: flex;
   flex-direction: column;
@@ -938,4 +941,12 @@ function close() {
 .led { width: 8px; height: 8px; border-radius: 50%; background: #242a30; }
 .led.on { background: var(--mint); box-shadow: 0 0 7px var(--mint); }
 .engrave { margin-left: auto; font-size: 9px; letter-spacing: 2px; color: #3f464c; }
+
+@media (prefers-reduced-motion: reduce) {
+  .console,
+  .fx.flicker,
+  .cursor {
+    animation: none;
+  }
+}
 </style>

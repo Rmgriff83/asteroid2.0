@@ -1,6 +1,7 @@
 <script setup>
 // Renders a ship's vertex data as a crisp inline SVG with a soft glow.
 import { computed } from 'vue'
+import { getShipAccent } from '../game/data/accents'
 
 const props = defineProps({
   ship: { type: Object, required: true },
@@ -24,7 +25,7 @@ const bounds = computed(() => {
 
 const pointsStr = computed(() => props.ship.verts.map(([x, y]) => `${x},${y}`).join(' '))
 
-const colorHex = computed(() => '#' + props.ship.color.toString(16).padStart(6, '0'))
+const colorHex = computed(() => getShipAccent(props.ship.id).css)
 </script>
 
 <template>

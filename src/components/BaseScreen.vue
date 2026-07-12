@@ -8,6 +8,8 @@ import { EventBus } from '../game/EventBus'
 import { RESOURCES } from '../game/data/resources'
 import { getModifiers } from '../game/systems/modifiers'
 import { addPermanentKey } from '../game/systems/WorldDiffs'
+import { storedFor } from '../game/systems/baseYield'
+import { syncSiloNotifications } from '../services/notifications'
 
 const BUILD_COST = { ferrite: 15, silicate: 8 }
 const RATE_PER_HOUR = 6
@@ -25,11 +27,7 @@ const canBuild = computed(() =>
   Object.entries(BUILD_COST).every(([type, qty]) => (playerStore.cargo[type] || 0) >= qty)
 )
 
-const stored = computed(() => {
-  if (!base.value) return 0
-  const elapsedHrs = (Date.now() - base.value.lastCollected) / 3600000
-  return Math.min(base.value.capacity, Math.floor(elapsedHrs * base.value.ratePerHour))
-})
+const stored = computed(() => (base.value ? storedFor(base.value) : 0))
 
 const cargoSpace = computed(() =>
   base.value ? playerStore.maxAddable(base.value.resourceType) : 0
@@ -52,6 +50,7 @@ function build() {
   playerStore.unlockedNodes.push(id) // bases are fast-travel nodes
   addPermanentKey(props.panelKey) // base panels never evict
   playerStore.save()
+  syncSiloNotifications(playerStore.bases)
 }
 
 function collect() {
@@ -67,6 +66,7 @@ function collect() {
     b.lastCollected = Date.now() - ((stored.value - taken) / b.ratePerHour) * 3600000
   }
   playerStore.save()
+  syncSiloNotifications(playerStore.bases)
 }
 
 function leave() {

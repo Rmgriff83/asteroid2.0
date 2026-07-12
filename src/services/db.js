@@ -33,6 +33,10 @@ export async function dbDelete(store, key) {
   return (await getDB()).delete(store, key)
 }
 
+export async function dbClear(store) {
+  return (await getDB()).clear(store)
+}
+
 export async function dbAllEntries(store) {
   const db = await getDB()
   const [keys, values] = await Promise.all([db.getAllKeys(store), db.getAll(store)])

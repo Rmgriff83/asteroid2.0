@@ -11,6 +11,7 @@ import { getAuthored } from '../game/galaxy/authored'
 import { SECTOR_SIZE } from '../game/galaxy/constants'
 import { worldState } from '../game/systems/WorldDiffs'
 import { STAR_TYPES } from '../game/data/stars'
+import { storedFor, isSiloFull } from '../game/systems/baseYield'
 
 const canvasRef = ref(null)
 const info = reactive({ text: '', sub: '' })
@@ -102,15 +103,34 @@ function draw() {
     ctx.stroke()
   }
 
-  // unlocked fast-travel nodes
+  // unlocked fast-travel nodes: stations = mint square, bases = amber dome
   for (const id of playerStore.unlockedNodes) {
     const coords = id.split(':')[1]?.split(',').map(Number)
     if (!coords) continue
     const p = toScreen(coords[0] + 0.5, coords[1] + 0.5)
     if (p.x < -20 || p.x > w + 20 || p.y < -20 || p.y > h + 20) continue
-    ctx.strokeStyle = '#7dffd8'
-    ctx.lineWidth = 1.5
-    ctx.strokeRect(p.x - 5, p.y - 5, 10, 10)
+    if (id.startsWith('base:')) {
+      const base = playerStore.bases.find((b) => b.panelKey === `${coords[0]},${coords[1]}`)
+      ctx.strokeStyle = '#ffb35c'
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      ctx.arc(p.x, p.y + 2, 5, Math.PI, 0) // dome
+      ctx.moveTo(p.x - 6, p.y + 2)
+      ctx.lineTo(p.x + 6, p.y + 2) // baseline
+      ctx.moveTo(p.x, p.y - 3)
+      ctx.lineTo(p.x, p.y - 7) // antenna
+      ctx.stroke()
+      if (base && isSiloFull(base)) {
+        ctx.fillStyle = '#ffb35c'
+        ctx.beginPath()
+        ctx.arc(p.x + 6, p.y - 6, 2.5, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    } else {
+      ctx.strokeStyle = '#7dffd8'
+      ctx.lineWidth = 1.5
+      ctx.strokeRect(p.x - 5, p.y - 5, 10, 10)
+    }
   }
 
   // player marker
@@ -314,7 +334,13 @@ function inspect(px, py) {
     travel.cost = Math.ceil(dist * perPanel * 0.5)
     travel.px = px
     travel.py = py
-    travel.label = unlocked.startsWith('st:') ? 'STATION' : 'BASE'
+    if (unlocked.startsWith('st:')) {
+      travel.label = 'STATION'
+    } else {
+      const base = playerStore.bases.find((b) => b.panelKey === `${px},${py}`)
+      travel.label = base && isSiloFull(base) ? 'BASE — SILO FULL' : 'BASE'
+      if (base) info.sub += ` · silo ${storedFor(base)}/${base.capacity}`
+    }
     travel.show = dist > 0.5
   }
 

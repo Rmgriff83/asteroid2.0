@@ -4,9 +4,15 @@
 import bundled from '../data/authored/galaxy.json'
 
 let workingCopy = null // { sectors: {}, panels: {} } — set by the admin editor (dev only)
+let authoredVersion = 0 // bumped on every admin edit — cache-invalidation key
 
 export function setWorkingCopy(copy) {
   workingCopy = copy
+  authoredVersion++
+}
+
+export function getAuthoredVersion() {
+  return authoredVersion
 }
 
 export function getWorkingCopy() {

@@ -16,7 +16,7 @@ import PauseOverlay from './components/PauseOverlay.vue'
 import StationScreen from './components/StationScreen.vue'
 import StarMapScreen from './components/StarMapScreen.vue'
 import BaseScreen from './components/BaseScreen.vue'
-import CargoTerminal from './components/CargoTerminal.vue'
+import CockpitShell from './components/cockpit/CockpitShell.vue'
 import DialogueOverlay from './components/DialogueOverlay.vue'
 
 // dev-only chunk: tree-shaken/lazy-split out of player builds
@@ -48,7 +48,16 @@ function onPageHide() {
 }
 
 function onBackButton() {
-  if (playerStore.screen === 'store') {
+  if (playerStore.screen === 'cargo') {
+    // step back through the cockpit: open terminal → stowed → resume flight
+    if (playerStore.cockpitView === 'open') {
+      playerStore.cockpitView = 'stowed'
+    } else {
+      playerStore.screen = 'game'
+      playerStore.paused = false
+      EventBus.emit('resume-game')
+    }
+  } else if (playerStore.screen === 'store') {
     playerStore.screen = playerStore.storeReturnsTo === 'game' ? 'game' : 'menu'
   } else if (playerStore.screen === 'game' && !playerStore.paused) {
     playerStore.paused = true
@@ -90,7 +99,7 @@ onBeforeUnmount(() => {
   <StoreScreen v-else-if="playerStore.screen === 'store'" />
   <StationScreen v-else-if="playerStore.screen === 'station'" />
   <StarMapScreen v-else-if="playerStore.screen === 'map'" />
-  <CargoTerminal v-else-if="playerStore.screen === 'cargo'" />
+  <CockpitShell v-else-if="playerStore.screen === 'cargo'" />
   <component
     :is="AdminGalaxyView"
     v-else-if="AdminGalaxyView && playerStore.screen === 'admin'"
@@ -102,11 +111,24 @@ onBeforeUnmount(() => {
   />
   <PauseOverlay v-if="playerStore.screen === 'game' && playerStore.paused" />
   <DialogueOverlay />
+  <!-- one retro display: scanlines over EVERYTHING, always topmost -->
+  <div class="global-scanlines"></div>
 </template>
 
 <style scoped>
 .game-host {
   position: absolute;
   inset: 0;
+}
+
+/* the whole app is one retro CRT: this layer sits above every screen,
+   overlay, and anything added later — never introduce a higher z-index */
+.global-scanlines {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, transparent 0 4px, rgba(0, 0, 0, 0.22) 4px 6px);
+  opacity: 0.35;
 }
 </style>

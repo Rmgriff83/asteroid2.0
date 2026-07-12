@@ -2,6 +2,8 @@ import Phaser from 'phaser'
 import VirtualJoystick from '../systems/VirtualJoystick'
 import { EventBus } from '../EventBus'
 import { playerStore } from '../../stores/playerStore'
+import { getShipAccent } from '../data/accents'
+import { isSiloFull } from '../systems/baseYield'
 import { getSafeArea } from '../utils/safeArea'
 import { worldState } from '../systems/WorldDiffs'
 import { generatePanel } from '../galaxy/panelGen'
@@ -101,12 +103,7 @@ export default class UIScene extends Phaser.Scene {
       this.boostBtn.on('pointerdown', () => EventBus.emit('touch-boost'))
     }
 
-    this.scanlines = this.add
-      .tileSprite(0, 0, this.scale.width, this.scale.height, 'scanline')
-      .setOrigin(0)
-      .setAlpha(0.07)
-      .setDepth(100)
-      .setScrollFactor(0)
+    // scanlines come from App.vue's global overlay — never add them here
 
     this.boostStart = 0
     this.boostReadyAt = 0
@@ -242,12 +239,27 @@ export default class UIScene extends Phaser.Scene {
             )
             g.fillCircle(x + cell / 2, y + cell / 2, spec.well.kind === 'star' ? 2.4 : 1.8)
           }
+          // player base: amber dome over whatever else is here
+          const base = playerStore.bases.find((b) => b.panelKey === key)
+          if (base) {
+            const cx = x + cell / 2
+            const cy = y + cell / 2 + 2
+            g.lineStyle(1.2, 0xffb35c, 0.95)
+            g.beginPath()
+            g.arc(cx, cy, 3, Math.PI, 0, false)
+            g.strokePath()
+            g.lineBetween(cx - 4, cy, cx + 4, cy)
+            if (isSiloFull(base)) {
+              g.fillStyle(0xffb35c, 1)
+              g.fillCircle(x + cell - 4, y + 3, 1.8)
+            }
+          }
         } else {
           g.fillStyle(0xeaf6ff, 0.05)
           g.fillRect(x, y, cell - 2, cell - 2)
         }
         if (dx === 0 && dy === 0) {
-          g.lineStyle(1.4, 0xeaf6ff, 0.95)
+          g.lineStyle(1.4, getShipAccent(playerStore.selectedShip).int, 0.95)
           g.strokeRect(x - 1, y - 1, cell, cell)
         }
       }
@@ -309,7 +321,6 @@ export default class UIScene extends Phaser.Scene {
       this.shootBtn.setPosition(w - 226 - sa.right, h - 140 - sa.bottom)
       this.boostBtn.setPosition(w - 88 - sa.right, h - 232 - sa.bottom)
     }
-    if (this.scanlines) this.scanlines.setSize(w, h)
   }
 
   update(time) {

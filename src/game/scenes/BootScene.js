@@ -57,11 +57,5 @@ export default class BootScene extends Phaser.Scene {
     g.generateTexture('dot', 6, 6)
     g.destroy()
 
-    // scanline: 2 dark rows out of 6, tiled full-screen at low alpha
-    g = this.make.graphics({ add: false })
-    g.fillStyle(0x000000, 1)
-    g.fillRect(0, 0, 4, 2)
-    g.generateTexture('scanline', 4, 6)
-    g.destroy()
   }
 }

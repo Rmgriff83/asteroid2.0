@@ -8,6 +8,7 @@ import { playerStore } from './stores/playerStore'
 // debug/testing hook (harmless in production)
 import { EventBus } from './game/EventBus'
 import { generatePanel, sectorStarAssignments } from './game/galaxy/panelGen'
+import { resolveSectorLayout } from './game/galaxy/sectorLayout'
 import { starfieldSpec } from './game/systems/Starfield'
 import { resolveSector } from './game/galaxy/sectorProps'
 import { getAuthored } from './game/galaxy/authored'
@@ -21,6 +22,7 @@ import {
 } from './game/systems/WorldDiffs'
 import { isAdminEnabled, setWorkingCopy, getWorkingCopy } from './game/galaxy/authored'
 import { dbGet } from './services/db'
+import { syncSiloNotifications } from './services/notifications'
 
 // dev only: restore the admin editor's working copy of authored overrides
 async function loadAdminWorkingCopy() {
@@ -35,6 +37,7 @@ window.__zen = {
   debug: {
     generatePanel,
     sectorStarAssignments,
+    resolveSectorLayout,
     starfieldSpec,
     resolveSector,
     getAuthored,
@@ -59,5 +62,14 @@ window.__zen = {
 }
 
 Promise.all([playerStore.load(), loadWorld(), loadAdminWorkingCopy()]).finally(() => {
+  // a generator upgrade re-rolled the world: drop world-coupled player state
+  // (bases, unlocked nodes, missions) while keeping the full profile
+  if (worldState.regenerated) {
+    playerStore.resetWorldCoupledState()
+    playerStore.save()
+  }
+  // resync silo notifications from the loaded base list (an empty list —
+  // e.g. after a world re-roll — cancels everything pending)
+  syncSiloNotifications(playerStore.bases)
   createApp(App).mount('#app')
 })

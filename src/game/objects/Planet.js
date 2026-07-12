@@ -2,7 +2,11 @@
 // One per panel at most, so retained Graphics is cheap — no texture bake needed.
 import Phaser from 'phaser'
 import { mulberry32 } from '../utils/rng'
-import { randRange } from '../utils/geometry'
+import { randRange, planetCaptureRadius } from '../utils/geometry'
+import { ITEMS } from '../data/resources'
+import { storedFor, msToFull } from '../systems/baseYield'
+
+const FONT = '"Space Mono", monospace'
 
 const TYPE_STYLE = {
   rocky: { stroke: 0xcdbfa8, fill: 0x2c2822 },
@@ -20,6 +24,25 @@ export default class Planet extends Phaser.GameObjects.Container {
     this.add(this.gfx)
     this.draw()
 
+    // owned base: live silo readout under the planet, refreshed while parked
+    if (spec.base) {
+      this.baseLabel = scene.add
+        .text(0, spec.radius + 22, '', {
+          fontFamily: FONT,
+          fontSize: '11px',
+          color: '#ffb35c',
+          align: 'center',
+        })
+        .setOrigin(0.5, 0)
+      this.add(this.baseLabel)
+      this.refreshBaseLabel()
+      this.labelTimer = scene.time.addEvent({
+        delay: 30000,
+        loop: true,
+        callback: () => this.refreshBaseLabel(),
+      })
+    }
+
     scene.add.existing(this)
     scene.physics.add.existing(this)
     const r = spec.radius
@@ -29,12 +52,41 @@ export default class Planet extends Phaser.GameObjects.Container {
     this.setDepth(-5) // behind rocks and ship
   }
 
+  refreshBaseLabel() {
+    const base = this.spec.base
+    if (!base || !this.baseLabel) return
+    const name = (ITEMS[base.resourceType]?.name ?? base.resourceType).toUpperCase()
+    const ms = msToFull(base)
+    let status
+    if (ms <= 0) {
+      status = 'SILO FULL — COLLECT'
+    } else {
+      const totalM = Math.ceil(ms / 60000)
+      const h = Math.floor(totalM / 60)
+      const m = totalM % 60
+      status = `FULL IN ${h > 0 ? `${h}H ` : ''}${m}M`
+    }
+    this.baseLabel.setText(`▲ ${name} ${storedFor(base)}/${base.capacity} · ${status}`)
+    this.baseLabel.setColor(ms <= 0 ? '#7dffd8' : '#ffb35c')
+  }
+
+  destroy(fromScene) {
+    this.labelTimer?.remove()
+    super.destroy(fromScene)
+  }
+
   draw() {
     const { type, radius, visualSeed, nodes, baseSite } = this.spec
     const rand = mulberry32(visualSeed)
     const style = TYPE_STYLE[type] || TYPE_STYLE.rocky
     const g = this.gfx
     g.clear()
+
+    // capture boundary — the "atmosphere" edge where orbital capture begins
+    g.lineStyle(1, style.stroke, 0.1)
+    g.strokeCircle(0, 0, planetCaptureRadius(radius))
+    g.lineStyle(4, style.stroke, 0.03)
+    g.strokeCircle(0, 0, planetCaptureRadius(radius) - 3)
 
     // body disc: faint fill + double-stroke rim
     g.fillStyle(style.fill, 0.55)
@@ -117,6 +169,28 @@ export default class Planet extends Phaser.GameObjects.Container {
       g.fillCircle(nx, ny, 7)
       g.fillStyle(0x7dffd8, 0.95)
       g.fillCircle(nx, ny, 3)
+    }
+
+    // owned-base logo: a badge stamped on the planet face — amber ring with
+    // a diamond insignia tinted by the resource this base mines
+    if (this.spec.base) {
+      const resColor = ITEMS[this.spec.base.resourceType]?.color ?? 0xffb35c
+      g.fillStyle(0x0a1017, 0.75)
+      g.fillCircle(0, 0, 18)
+      g.lineStyle(1.6, 0xffb35c, 0.95)
+      g.strokeCircle(0, 0, 18)
+      g.lineStyle(1, 0xffb35c, 0.4)
+      g.strokeCircle(0, 0, 14)
+      g.lineStyle(1.6, resColor, 1)
+      g.beginPath()
+      g.moveTo(0, -9)
+      g.lineTo(8, 0)
+      g.lineTo(0, 9)
+      g.lineTo(-8, 0)
+      g.closePath()
+      g.strokePath()
+      g.fillStyle(resColor, 0.3)
+      g.fillCircle(0, 0, 6)
     }
 
     // base site landing marker / built base dome

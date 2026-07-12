@@ -5,15 +5,25 @@
 // pseudo-3D; the starfield keeps the exact in-game dot sizes and twinkle.
 import { onMounted, onBeforeUnmount, ref } from 'vue'
 import { playerStore } from '../stores/playerStore'
+import { motion } from '../services/motion'
 import { worldState, getDiff } from '../game/systems/WorldDiffs'
 import { generatePanel, panelKey } from '../game/galaxy/panelGen'
 import { getAuthored } from '../game/galaxy/authored'
 import { starfieldSpec } from '../game/systems/Starfield'
 import { STAR_TYPES } from '../game/data/stars'
 import { getShip } from '../game/data/ships'
+import { getShipAccent } from '../game/data/accents'
 import { ITEMS } from '../game/data/resources'
 import { hash32 } from '../game/utils/rng'
 import { PANEL_W, PANEL_H } from '../game/galaxy/constants'
+
+const props = defineProps({
+  // legacy CSS canopy framing (reflections + corner struts); the cockpit shell
+  // passes false and draws its own SVG chrome instead
+  chrome: { type: Boolean, default: true },
+  // where the flight horizon sits (fraction of view height from the top)
+  horizon: { type: Number, default: 0.17 },
+})
 
 const canvasRef = ref(null)
 let ctx = null
@@ -29,8 +39,9 @@ let bobAmp = 3 // cheaper hulls have worse stabilizers — set from ship def
 
 const FOV = (95 * Math.PI) / 180
 // the console covers mid-screen — put the flight horizon in the visible band
-// above it so what's dead ahead (stars especially) shows over the terminal
-const HORIZON = 0.17
+// above it so what's dead ahead (stars especially) shows over the terminal.
+// Eased toward the prop each frame so stow/open re-frames glide.
+let horizonCur = props.horizon
 const FADE_NEAR = 300
 const FADE_FAR = 1600
 
@@ -95,7 +106,7 @@ function project(px2, py2, alt, w, h, focal) {
   if (d < 8) return null
   return {
     x: w / 2 + (l / d) * focal,
-    y: h * HORIZON - (alt / d) * focal,
+    y: h * horizonCur - (alt / d) * focal,
     d,
   }
 }
@@ -109,7 +120,9 @@ function draw(now) {
   const c = canvasRef.value
   if (!c || !ctx) return
   if (!t0) t0 = now
-  const t = (now - t0) / 1000
+  // reduced motion: hold scene time at zero — stills drift, twinkle, spin, pulse
+  const t = motion.reduced ? 0 : (now - t0) / 1000
+  horizonCur += (props.horizon - horizonCur) * (motion.reduced ? 1 : 0.12)
   const w = c.clientWidth
   const h = c.clientHeight
   const focal = w / (2 * Math.tan(FOV / 2))
@@ -204,6 +217,33 @@ function draw(now) {
       if (P.type === 'ringed') {
         ctx.beginPath()
         ctx.ellipse(p.x, p.y, r * 1.7, r * 0.5, -0.3, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+
+      // owned base: same badge as in-flight — amber ring + resource-colored
+      // diamond insignia (mirrors the mineral glyphs on asteroids)
+      const base = playerStore.bases.find(
+        (b) => b.panelKey === `${playerStore.currentPanel.px},${playerStore.currentPanel.py}`
+      )
+      if (base) {
+        const rb = Math.max(4, r * 0.2)
+        ctx.fillStyle = 'rgba(10, 16, 23, 0.75)'
+        ctx.beginPath()
+        ctx.arc(p.x, p.y, rb, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.strokeStyle = '#ffb35c'
+        ctx.lineWidth = 1.2
+        ctx.stroke()
+        const resColor = hexColor(ITEMS[base.resourceType]?.color ?? 0xffb35c)
+        const d = rb * 0.55
+        ctx.strokeStyle = resColor
+        ctx.lineWidth = 1.1
+        ctx.beginPath()
+        ctx.moveTo(p.x, p.y - d)
+        ctx.lineTo(p.x + d * 0.85, p.y)
+        ctx.lineTo(p.x, p.y + d)
+        ctx.lineTo(p.x - d * 0.85, p.y)
+        ctx.closePath()
         ctx.stroke()
       }
       ctx.globalAlpha = 1
@@ -324,7 +364,7 @@ function draw(now) {
     ctx.translate(cx, cy)
     ctx.rotate(-Math.PI / 2)
     ctx.scale(ns, ns)
-    ctx.strokeStyle = hexColor(shipDef.color)
+    ctx.strokeStyle = getShipAccent(playerStore.selectedShip).css
     ctx.globalAlpha = 0.9
     ctx.lineWidth = 1.4 / ns
     ctx.beginPath()
@@ -364,12 +404,15 @@ onBeforeUnmount(() => {
 <template>
   <div class="space-page">
     <canvas ref="canvasRef" class="space"></canvas>
-    <!-- through-the-glass framing: vignette, reflections, corner struts -->
+    <!-- through-the-glass framing: vignette always; reflections + corner
+         struts only when no external cockpit chrome is drawn over us -->
     <div class="glass-fx">
-      <div class="reflect r1"></div>
-      <div class="reflect r2"></div>
-      <div class="strut sl"></div>
-      <div class="strut sr"></div>
+      <template v-if="chrome">
+        <div class="reflect r1"></div>
+        <div class="reflect r2"></div>
+        <div class="strut sl"></div>
+        <div class="strut sr"></div>
+      </template>
     </div>
   </div>
 </template>

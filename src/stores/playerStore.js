@@ -21,6 +21,7 @@ export const playerStore = reactive({
   ownedShips: ['classic'],
   selectedShip: 'classic',
   perks: {}, // { perkId|upgradeId: ownedTierCount }
+  shipAccents: {}, // { shipId: accentKey } — cosmetic hull tint override (see data/accents.js)
   unlockedNodes: [], // station/base ids reachable by fast travel
   missions: [],
   bases: [],
@@ -34,6 +35,7 @@ export const playerStore = reactive({
 
   // session-only UI state
   screen: 'splash', // splash | menu | game | store | station | map | base
+  cockpitView: 'stowed', // session-only: 'stowed' | 'open' framing on the cargo screen
   paused: false,
   landing: { panelKey: '0,0', resourceType: 'ferrite' },
   shipPose: null, // session-only: {x, y, rot} snapshot for the cockpit camera
@@ -54,6 +56,7 @@ export const playerStore = reactive({
       this.ownedShips = Array.isArray(data.ownedShips) ? data.ownedShips : ['classic']
       this.selectedShip = data.selectedShip ?? 'classic'
       this.perks = data.perks ?? {}
+      this.shipAccents = data.shipAccents ?? {}
       this.unlockedNodes = data.unlockedNodes ?? []
       this.missions = data.missions ?? []
       this.bases = data.bases ?? []
@@ -159,6 +162,7 @@ export const playerStore = reactive({
       ownedShips: [...this.ownedShips],
       selectedShip: this.selectedShip,
       perks: { ...this.perks },
+      shipAccents: { ...this.shipAccents },
       unlockedNodes: [...this.unlockedNodes],
       missions: this.missions.map((m) => ({ ...m })),
       bases: this.bases.map((b) => ({ ...b })),
@@ -207,6 +211,23 @@ export const playerStore = reactive({
     if (!this.ownedShips.includes(id)) return
     this.selectedShip = id
     this.save()
+  },
+
+  setShipAccent(shipId, key) {
+    this.shipAccents[shipId] = key
+    this.save()
+  },
+
+  // Called after a GEN_VERSION world re-roll: everything that referenced
+  // positions in the old galaxy is cleared; the player's profile (economy,
+  // ships, cargo, perks, tints, recipes, lore) is untouched.
+  resetWorldCoupledState() {
+    this.bases = []
+    this.unlockedNodes = []
+    this.waypoints = []
+    this.missions = []
+    this.dockedStation = null
+    this.currentPanel = { px: 0, py: 0 }
   },
 
   buyPerkTier(perk) {

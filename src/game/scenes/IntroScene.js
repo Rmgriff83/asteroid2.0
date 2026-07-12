@@ -41,18 +41,7 @@ export default class IntroScene extends Phaser.Scene {
     })
     this.events.once('shutdown', () => this.starfield?.destroy())
 
-    this.scanlines = this.add
-      .tileSprite(0, 0, w, h, 'scanline')
-      .setOrigin(0)
-      .setAlpha(0.07)
-      .setDepth(10)
-
-    this.scale.on('resize', this.onResize, this)
-    this.events.once('shutdown', () => this.scale.off('resize', this.onResize, this))
-  }
-
-  onResize(size) {
-    this.scanlines.setSize(size.width, size.height)
+    // scanlines come from App.vue's global overlay — never add them here
   }
 
   update(time, delta) {

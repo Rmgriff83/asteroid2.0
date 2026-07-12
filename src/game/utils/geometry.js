@@ -33,3 +33,10 @@ export function strokeGlowLine(gfx, x1, y1, x2, y2, color, alpha = 1) {
 export function randRange(rand, min, max) {
   return min + rand() * (max - min)
 }
+
+// A planet's outer capture boundary — its "atmosphere" edge. Objects inside
+// get captured into orbit; outside it the planet exerts no pull at all.
+// Scales with gravity (μ ∝ radius²): 85 → 280 px, 150 → 410 px.
+export function planetCaptureRadius(radius) {
+  return radius * 2 + 110
+}

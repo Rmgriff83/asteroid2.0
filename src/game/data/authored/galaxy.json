@@ -1,4 +1,6 @@
 {
   "sectors": {},
-  "panels": {}
+  "panels": {
+    "0,0": { "role": "temperate", "well": "none" }
+  }
 }

@@ -89,8 +89,15 @@ export function resolveSector(galaxySeed, sx, sy, authored = null) {
   const stationDensity = Math.max(0.02, 0.14 - core * 0.002 + arm * 0.05)
   const paletteBias = Math.floor(rng() * 14)
 
-  // every sector anchors 1–2 star systems
-  const starCount = 1 + (rng() < 0.35 ? 1 : 0)
+  // star density rises toward the galactic center, like a real spiral galaxy:
+  // packed multi-star sectors coreward, thinning to lone systems at the rim.
+  // (each branch draws exactly once — channel draw-count stays fixed)
+  let starCount
+  if (core < 3) starCount = 3 + (rng() < 0.5 ? 1 : 0)
+  else if (core < 10) starCount = 2 + (rng() < 0.4 ? 1 : 0)
+  else if (core < 25) starCount = 1 + (rng() < 0.35 ? 1 : 0)
+  else starCount = 1 + (rng() < 0.15 ? 1 : 0)
+  if (systemType === 'void') starCount = Math.max(1, starCount - 1)
   const starWeights = starWeightsFor(systemType)
 
   let props = {

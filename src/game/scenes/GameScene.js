@@ -17,8 +17,11 @@ import InputManager from '../systems/InputManager'
 import { getModifiers } from '../systems/modifiers'
 import { EventBus } from '../EventBus'
 import { playerStore } from '../../stores/playerStore'
+import { getShipAccent } from '../data/accents'
 import { generatePanel, panelKey } from '../galaxy/panelGen'
 import { getAuthored } from '../galaxy/authored'
+import { planetCaptureRadius } from '../utils/geometry'
+import { ASTEROID_TIERS } from '../galaxy/constants'
 import { spawnPanel } from '../systems/PanelSpawner'
 import {
   worldState,
@@ -84,7 +87,7 @@ export default class GameScene extends Phaser.Scene {
       lifespan: { min: 180, max: 420 },
       scale: { start: 0.7, end: 0 },
       alpha: { start: 0.45, end: 0 },
-      tint: 0x7dffd8,
+      tint: getShipAccent(playerStore.selectedShip).int,
       emitting: false,
     })
     this.nextPuffAt = 0
@@ -117,7 +120,10 @@ export default class GameScene extends Phaser.Scene {
       this.mods = getModifiers(playerStore.perks)
       this.ship.setMods(this.mods)
     }
-    this.onShipChanged = (id) => this.ship.setShip(id)
+    this.onShipChanged = (id) => {
+      this.ship.setShip(id)
+      this.thrustTrail.particleTint = getShipAccent(id).int
+    }
     this.onTeleport = ({ px, py }) => this.teleport(px, py)
     this.onDock = () => this.dock()
     this.onLand = () => this.land()
@@ -292,6 +298,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     this.applyGravity(delta)
+    this.enforcePlanetOrbits(delta)
     this.coordinator.update(time)
 
     // heavy hold drags top speed: no penalty below 60% mass, −35% at full.
@@ -339,7 +346,9 @@ export default class GameScene extends Phaser.Scene {
     if (this.planet?.spec.baseSite && this.ship.active) {
       const dist = Math.hypot(this.ship.x - this.planet.x, this.ship.y - this.planet.y)
       const speed = Math.hypot(this.ship.body.velocity.x, this.ship.body.velocity.y)
-      landable = dist < this.planet.spec.radius + 80 && speed < 80
+      // captured in the planet's ring = close enough to land (orbit speeds
+      // at capture range run ~60–90, hence the higher threshold)
+      landable = dist < planetCaptureRadius(this.planet.spec.radius) && speed < 110
     }
     if (landable !== this.landAvailable) {
       this.landAvailable = landable
@@ -422,6 +431,73 @@ export default class GameScene extends Phaser.Scene {
   // Every massive body in the panel is a gravity source with a standard
   // gravitational parameter μ (= G·M). Acceleration on any body: a = μ/r²
   // toward the source (inverse-square, min-distance softening clamp).
+  // Inside a planet's capture boundary, loose rock settles into a tangential
+  // orbit — the planet wears a ring (self-healing: mining knocks bits loose,
+  // the ring recovers them). Full-size rocks tidally shatter on capture.
+  // The ship gets a soft capture: coasting settles into orbit (where the land
+  // prompt lives); any thrust or boost pulls straight back out.
+  enforcePlanetOrbits(delta) {
+    const p = this.panelSpec?.planet
+    if (!p || !this.planet) return
+    const capture = planetCaptureRadius(p.radius)
+    const mu = p.mu ?? p.radius * p.radius * 70
+    const blend = Math.min(1, (delta / 16.7) * 0.08)
+
+    for (const rock of [...this.asteroids.getChildren()]) {
+      if (!rock.active) continue
+      const dx = rock.x - p.x
+      const dy = rock.y - p.y
+      const r = Math.hypot(dx, dy) || 1
+      if (r > capture) continue
+
+      // tidal breakup: a full-size rock can't hold together this deep
+      if (rock.radius >= ASTEROID_TIERS[0]) {
+        this.tidalShatter(rock, Math.atan2(dy, dx))
+        continue
+      }
+
+      const vCirc = Math.min(150, Math.sqrt(mu / r))
+      const sign = dx * rock.body.velocity.y - dy * rock.body.velocity.x >= 0 ? 1 : -1
+      let tx = (-dy / r) * sign * vCirc
+      let ty = (dx / r) * sign * vCirc
+      // ring bits shouldn't scrape the surface
+      if (r < p.radius + 60) {
+        tx += (dx / r) * 20
+        ty += (dy / r) * 20
+      }
+      rock.body.velocity.x += (tx - rock.body.velocity.x) * blend
+      rock.body.velocity.y += (ty - rock.body.velocity.y) * blend
+    }
+
+    if (this.ship.active && !this.ship.thrusting) {
+      const dx = this.ship.x - p.x
+      const dy = this.ship.y - p.y
+      const r = Math.hypot(dx, dy) || 1
+      if (r < capture && r > p.radius + 30) {
+        const v = this.ship.body.velocity
+        const vCirc = Math.min(150, Math.sqrt(mu / r))
+        const sign = dx * v.y - dy * v.x >= 0 ? 1 : -1
+        const shipBlend = Math.min(1, (delta / 16.7) * 0.03)
+        v.x += ((-dy / r) * sign * vCirc - v.x) * shipBlend
+        v.y += ((dx / r) * sign * vCirc - v.y) * shipBlend
+      }
+    }
+  }
+
+  // shatter a rock into ring bits (same diff bookkeeping as a mining hit);
+  // a mineral seam survives in the largest fragment
+  tidalShatter(rock, angle) {
+    if (rock.specIdx >= 0) this.panelDestroyed.add(rock.specIdx)
+    const children = rock.split(this.mods, angle)
+    for (const c of children) this.asteroids.add(c)
+    if (rock.mineral && children.length) {
+      children[0].setMineral({ ...rock.mineral })
+    }
+    this.debris.explode(8, rock.x, rock.y)
+    rock.release()
+    sfx.crack()
+  }
+
   buildGravitySources() {
     this.gravitySources = []
     const spec = this.panelSpec
@@ -441,6 +517,8 @@ export default class GameScene extends Phaser.Scene {
         mu: spec.planet.mu ?? spec.planet.radius * spec.planet.radius * 70,
         minDist: spec.planet.radius + 40,
         killRadius: 0, // you crash on its collider instead
+        // the "atmosphere" edge: no pull beyond it, orbital capture within
+        captureRadius: planetCaptureRadius(spec.planet.radius),
       })
     }
   }
@@ -459,6 +537,8 @@ export default class GameScene extends Phaser.Scene {
         const dy = s.y - obj.y
         const rawSq = dx * dx + dy * dy
         const dist = Math.sqrt(rawSq) || 1
+        // planets end at their capture boundary — no long-range drag
+        if (s.captureRadius && dist > s.captureRadius) continue
         const a = s.mu / Math.max(rawSq, s.minDist * s.minDist)
         obj.body.velocity.x += (dx / dist) * a * dt
         obj.body.velocity.y += (dy / dist) * a * dt
@@ -595,6 +675,10 @@ export default class GameScene extends Phaser.Scene {
     if (this.anomaly) {
       this.anomaly.destroy()
       this.anomaly = null
+    }
+    if (this.vista) {
+      this.vista.destroy()
+      this.vista = null
     }
     if (this.starfield) {
       this.starfield.destroy()
