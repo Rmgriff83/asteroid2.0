@@ -9,6 +9,8 @@ import { EventBus } from './game/EventBus'
 import { playerStore } from './stores/playerStore'
 import { flushWorld } from './game/systems/WorldDiffs'
 import { unlockAudio } from './services/sfx'
+import { initDeepLinks } from './services/deepLinks'
+import { syncWidgetFeed } from './services/widgetFeed'
 import SplashScreen from './components/SplashScreen.vue'
 import MainMenu from './components/MainMenu.vue'
 import StoreScreen from './components/StoreScreen.vue'
@@ -32,6 +34,7 @@ function flushAll() {
   // best-effort persistence flush — iOS can kill the WebView with no warning
   playerStore.flushNow()
   flushWorld()
+  syncWidgetFeed() // refresh home-screen widget frames (native only, async best-effort)
 }
 
 function onVisibilityChange() {
@@ -96,6 +99,7 @@ onMounted(() => {
   if (Capacitor.isNativePlatform()) {
     ScreenOrientation.lock({ orientation: 'landscape' }).catch(() => {})
     CapApp.addListener('backButton', onBackButton)
+    initDeepLinks() // widget taps: asteroidzen://base/<panelKey>
   }
 })
 

@@ -39,6 +39,7 @@ export const playerStore = reactive({
   cockpitView: 'stowed', // session-only: 'stowed' | 'open' framing on the cargo screen
   paused: false,
   landing: { panelKey: '0,0', resourceType: 'ferrite' },
+  baseReturnsTo: 'game', // 'game' | 'menu' — 'menu' when a widget deep link opened the base
   shipPose: null, // session-only: {x, y, rot} snapshot for the cockpit camera
   storeReturnsTo: 'menu', // 'menu' | 'game'
   loaded: false,

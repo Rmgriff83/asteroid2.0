@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Full-width (4×2) base-window widget. updatePeriodMillis 0: refreshes come
+     from WorkManager (15-min) and from the app pushing a fresh feed. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="250dp"
+    android:minHeight="110dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/widget_base"
+    android:configure="com.example.asteroidzen.widget.WidgetConfigActivity"
+    android:widgetCategory="home_screen" />

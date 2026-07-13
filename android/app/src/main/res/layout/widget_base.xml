@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Full-width base-window widget: pre-rendered surface frame behind a scrim,
+     silo readout + fill bar along the bottom. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:id="@+id/widget_body"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <ImageView
+                android:id="@+id/widget_frame"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:scaleType="centerCrop"
+                android:contentDescription="@null" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/widget_scrim" />
+
+            <TextView
+                android:id="@+id/widget_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_margin="10dp"
+                android:textColor="#eaf6ff"
+                android:textSize="11sp"
+                android:letterSpacing="0.25"
+                android:fontFamily="monospace"
+                android:shadowColor="#000000"
+                android:shadowRadius="4"
+                android:text="" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="bottom"
+                android:orientation="vertical"
+                android:padding="10dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/widget_silo_text"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:textColor="#ffb35c"
+                        android:textSize="12sp"
+                        android:letterSpacing="0.12"
+                        android:fontFamily="monospace"
+                        android:shadowColor="#000000"
+                        android:shadowRadius="4"
+                        android:text="" />
+
+                    <TextView
+                        android:id="@+id/widget_full_in"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="#9aa39c"
+                        android:textSize="11sp"
+                        android:letterSpacing="0.12"
+                        android:fontFamily="monospace"
+                        android:shadowColor="#000000"
+                        android:shadowRadius="4"
+                        android:text="" />
+                </LinearLayout>
+
+                <ProgressBar
+                    android:id="@+id/widget_silo_bar"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="5dp"
+                    android:layout_marginTop="4dp"
+                    android:progressTint="#ffb35c"
+                    android:progressBackgroundTint="#33222222" />
+            </LinearLayout>
+        </FrameLayout>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/widget_empty"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:background="#0a1017"
+        android:textColor="#7dffd8"
+        android:textSize="13sp"
+        android:letterSpacing="0.25"
+        android:fontFamily="monospace"
+        android:visibility="gone"
+        android:text="" />
+</FrameLayout>

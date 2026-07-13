@@ -11,6 +11,7 @@ import { RESOURCES, ITEMS } from '../../game/data/resources'
 import { BASE_TRINKETS } from '../../game/data/baseTrinkets'
 import { storedFor, msToFull } from '../../game/systems/baseYield'
 import { syncSiloNotifications } from '../../services/notifications'
+import { syncWidgetFeed } from '../../services/widgetFeed'
 import TrinketArt from './TrinketArt.vue'
 
 const props = defineProps({
@@ -64,6 +65,7 @@ function collect() {
   now.value = Date.now()
   playerStore.save()
   syncSiloNotifications(playerStore.bases)
+  syncWidgetFeed()
 }
 
 function buyTrinket(t) {

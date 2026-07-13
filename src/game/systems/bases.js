@@ -5,6 +5,7 @@
 import { playerStore } from '../../stores/playerStore'
 import { addPermanentKey } from './WorldDiffs'
 import { syncSiloNotifications } from '../../services/notifications'
+import { syncWidgetFeed } from '../../services/widgetFeed'
 
 export const BUILD_COST = { ferrite: 15, silicate: 8 }
 export const RATE_PER_HOUR = 6
@@ -38,5 +39,6 @@ export function establishBase(panelKey, resourceType) {
   addPermanentKey(panelKey) // base panels never evict
   playerStore.save()
   syncSiloNotifications(playerStore.bases)
+  syncWidgetFeed()
   return base
 }

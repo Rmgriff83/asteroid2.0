@@ -25,6 +25,8 @@ import {
 import { isAdminEnabled, setWorkingCopy, getWorkingCopy } from './game/galaxy/authored'
 import { dbGet } from './services/db'
 import { syncSiloNotifications } from './services/notifications'
+import { syncWidgetFeed, writeWidgetFeed } from './services/widgetFeed'
+import { webFeedStore } from './services/widgetFeedPlugin'
 
 // dev only: restore the admin editor's working copy of authored overrides
 async function loadAdminWorkingCopy() {
@@ -62,6 +64,12 @@ window.__zen = {
     setCredits: (n) => {
       playerStore.credits = n
     },
+    // renders the widget feed into the in-memory web store (probe hook)
+    widgetFeedDryRun: async () => {
+      const manifest = await writeWidgetFeed()
+      return { manifest, fileCount: webFeedStore.files.size, reloads: webFeedStore.reloads }
+    },
+    webFeedStore,
   },
 }
 
@@ -75,5 +83,6 @@ Promise.all([playerStore.load(), loadWorld(), loadAdminWorkingCopy()]).finally((
   // resync silo notifications from the loaded base list (an empty list —
   // e.g. after a world re-roll — cancels everything pending)
   syncSiloNotifications(playerStore.bases)
+  syncWidgetFeed()
   createApp(App).mount('#app')
 })
