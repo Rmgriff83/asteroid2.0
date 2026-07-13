@@ -65,6 +65,13 @@ export const playerStore = reactive({
       // older saves predate per-base decoration placements
       this.bases = (data.bases ?? []).map((b) => ({ trinkets: {}, ...b }))
       this.waypoints = data.waypoints ?? []
+      // heal missing mission markers: every active mission owns a protected
+      // waypoint (pre-change saves, or markers lost to the old map-tap bug)
+      for (const m of this.missions) {
+        if (m.state === 'active' && !this.waypoints.some((w) => w.missionId === m.id)) {
+          this.waypoints.push({ px: m.to.px, py: m.to.py, missionId: m.id, name: m.to.name })
+        }
+      }
       this.seenDialogues = data.seenDialogues ?? []
       this.knownRecipes = data.knownRecipes ?? [...STARTER_RECIPES]
       this.bayLevel = data.bayLevel ?? 0
@@ -157,8 +164,14 @@ export const playerStore = reactive({
     }
   },
 
+  // IMPORTANT: the snapshot must be fully plain — nested objects read out of
+  // this reactive store are Vue Proxies, which IndexedDB CANNOT structured-
+  // clone (dbPut throws DataCloneError and flushNow swallows it, silently
+  // losing the whole save). The JSON round-trip at the end strips every
+  // proxy at any depth; shallow spreads alone are not enough (mission
+  // from/to, base trinkets, etc.).
   snapshot() {
-    return {
+    return JSON.parse(JSON.stringify({
       points: this.points,
       credits: this.credits,
       fuel: this.fuel,
@@ -178,7 +191,7 @@ export const playerStore = reactive({
       migratedCredits: this.migratedCredits,
       currentPanel: { ...this.currentPanel },
       updatedAt: Date.now(),
-    }
+    }))
   },
 
   save() {

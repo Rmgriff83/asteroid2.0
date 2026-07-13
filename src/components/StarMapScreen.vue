@@ -2,7 +2,7 @@
 // Full-screen star map (handoff §6): a Vue canvas that SAMPLES the seed
 // generators live at three LOD tiers — never renders every panel, never
 // stores a map. Fog of war = visitedSectors / per-panel diffs.
-import { onMounted, onBeforeUnmount, ref, reactive } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref, reactive } from 'vue'
 import { playerStore } from '../stores/playerStore'
 import { EventBus } from '../game/EventBus'
 import { generatePanel, panelKey } from '../game/galaxy/panelGen'
@@ -11,6 +11,7 @@ import { getAuthored } from '../game/galaxy/authored'
 import { SECTOR_SIZE } from '../game/galaxy/constants'
 import { worldState } from '../game/systems/WorldDiffs'
 import { STAR_TYPES } from '../game/data/stars'
+import { RESOURCES } from '../game/data/resources'
 import { storedFor, isSiloFull } from '../game/systems/baseYield'
 
 const canvasRef = ref(null)
@@ -90,17 +91,41 @@ function draw() {
   if (Z >= 18) drawPanelTier(w, h, Z)
   else drawSectorTier(w, h, Z)
 
-  // waypoints
+  // waypoints — mission destinations draw as labeled amber diamonds,
+  // manual waypoints keep the plain cross; overlapping markers dedupe
+  const drawnPanels = new Set()
   for (const wp of playerStore.waypoints) {
+    const key = `${wp.px},${wp.py},${wp.missionId ? 'm' : 'u'}`
+    if (drawnPanels.has(key)) continue
+    drawnPanels.add(key)
     const p = toScreen(wp.px + 0.5, wp.py + 0.5)
     ctx.strokeStyle = '#ffb35c'
     ctx.lineWidth = 1.5
-    ctx.beginPath()
-    ctx.moveTo(p.x - 6, p.y)
-    ctx.lineTo(p.x + 6, p.y)
-    ctx.moveTo(p.x, p.y - 6)
-    ctx.lineTo(p.x, p.y + 6)
-    ctx.stroke()
+    if (wp.missionId) {
+      ctx.beginPath()
+      ctx.moveTo(p.x, p.y - 8)
+      ctx.lineTo(p.x + 8, p.y)
+      ctx.lineTo(p.x, p.y + 8)
+      ctx.lineTo(p.x - 8, p.y)
+      ctx.closePath()
+      ctx.stroke()
+      ctx.fillStyle = 'rgba(255, 179, 92, 0.18)'
+      ctx.fill()
+      if (Z >= 10 && wp.name) {
+        ctx.fillStyle = '#ffb35c'
+        ctx.font = '10px "Space Mono", monospace'
+        ctx.textAlign = 'center'
+        ctx.fillText(wp.name.toUpperCase(), p.x, p.y - 12)
+        ctx.textAlign = 'left'
+      }
+    } else {
+      ctx.beginPath()
+      ctx.moveTo(p.x - 6, p.y)
+      ctx.lineTo(p.x + 6, p.y)
+      ctx.moveTo(p.x, p.y - 6)
+      ctx.lineTo(p.x, p.y + 6)
+      ctx.stroke()
+    }
   }
 
   // unlocked fast-travel nodes: stations = mint square, bases = amber dome
@@ -311,49 +336,87 @@ function inspect(px, py) {
   const visited = worldState.visitedSectors.has(sectorKey(sx, sy))
   travel.show = false
   if (!visited) {
+    // uncharted panels still announce mission destinations (it's on your
+    // contract) and still allow the manual waypoint toggle below
     info.text = 'UNCHARTED SPACE'
     info.sub = `panel ${px}, ${py}`
-    return
-  }
-  const sec = cachedSector(sx, sy)
-  const dominant = Object.entries(sec.resourceWeights).sort((a, b) => b[1] - a[1])[0][0]
-  info.text = sec.name
-  info.sub = `${sec.classification} · danger ${'!'.repeat(Math.max(1, Math.ceil(sec.danger * 4)))} · ${dominant}`
+  } else {
+    const sec = cachedSector(sx, sy)
+    const dominant = Object.entries(sec.resourceWeights).sort((a, b) => b[1] - a[1])[0][0]
+    info.text = sec.name
+    info.sub = `${sec.classification} · danger ${'!'.repeat(Math.max(1, Math.ceil(sec.danger * 4)))} · ${dominant}`
 
-  // fast travel target?
-  const nodeId = `st:${px},${py}`
-  const baseId = `base:${px},${py}`
-  const unlocked = playerStore.unlockedNodes.includes(nodeId)
-    ? nodeId
-    : playerStore.unlockedNodes.includes(baseId)
-      ? baseId
-      : null
-  if (unlocked) {
-    const dist = Math.hypot(px - playerStore.currentPanel.px, py - playerStore.currentPanel.py)
-    const perPanel = 0.5 + 0.15 * Math.sqrt(Math.hypot(px, py))
-    travel.cost = Math.ceil(dist * perPanel * 0.5)
-    travel.px = px
-    travel.py = py
-    if (unlocked.startsWith('st:')) {
-      travel.label = 'STATION'
-    } else {
-      const base = playerStore.bases.find((b) => b.panelKey === `${px},${py}`)
-      travel.label = base && isSiloFull(base) ? 'BASE — SILO FULL' : 'BASE'
-      if (base) info.sub += ` · silo ${storedFor(base)}/${base.capacity}`
+    // fast travel target?
+    const nodeId = `st:${px},${py}`
+    const baseId = `base:${px},${py}`
+    const unlocked = playerStore.unlockedNodes.includes(nodeId)
+      ? nodeId
+      : playerStore.unlockedNodes.includes(baseId)
+        ? baseId
+        : null
+    if (unlocked) {
+      const dist = Math.hypot(px - playerStore.currentPanel.px, py - playerStore.currentPanel.py)
+      const perPanel = 0.5 + 0.15 * Math.sqrt(Math.hypot(px, py))
+      travel.cost = Math.ceil(dist * perPanel * 0.5)
+      travel.px = px
+      travel.py = py
+      if (unlocked.startsWith('st:')) {
+        travel.label = 'STATION'
+      } else {
+        const base = playerStore.bases.find((b) => b.panelKey === `${px},${py}`)
+        travel.label = base && isSiloFull(base) ? 'BASE — SILO FULL' : 'BASE'
+        if (base) info.sub += ` · silo ${storedFor(base)}/${base.capacity}`
+      }
+      travel.show = dist > 0.5
     }
-    travel.show = dist > 0.5
   }
 
-  // waypoint toggle on double-inspect of the same panel
-  const existing = playerStore.waypoints.findIndex((wp) => wp.px === px && wp.py === py)
-  if (existing >= 0) {
-    playerStore.waypoints.splice(existing, 1)
-  } else if (info.lastPx === px && info.lastPy === py) {
-    playerStore.waypoints.push({ px, py })
+  // mission destinations announce themselves and are NEVER tap-removable
+  const missionsHere = playerStore.missions.filter(
+    (m) => m.state === 'active' && m.to.px === px && m.to.py === py
+  )
+  if (missionsHere.length) {
+    info.sub += ` · MISSION DESTINATION — ${missionsHere[0].to.name.toUpperCase()}`
+  }
+
+  // MANUAL waypoint toggle, only on the second tap of the same panel (the
+  // first tap just inspects — it must never delete a marker)
+  if (info.lastPx === px && info.lastPy === py) {
+    const existing = playerStore.waypoints.findIndex(
+      (wp) => wp.px === px && wp.py === py && !wp.missionId
+    )
+    if (existing >= 0) playerStore.waypoints.splice(existing, 1)
+    else playerStore.waypoints.push({ px, py })
   }
   info.lastPx = px
   info.lastPy = py
   playerStore.save()
+  requestDraw()
+}
+
+// --- CONTRACTS tracker: every active mission, tappable to find it ---
+const contracts = computed(() =>
+  playerStore.missions
+    .filter((m) => m.state === 'active')
+    .map((m) => ({
+      id: m.id,
+      kind: m.kind,
+      qty: m.qty,
+      resource: RESOURCES[m.resource]?.name ?? m.resource,
+      toName: m.to.name,
+      px: m.to.px,
+      py: m.to.py,
+      reward: m.reward,
+      dist: Math.round(
+        Math.hypot(m.to.px - playerStore.currentPanel.px, m.to.py - playerStore.currentPanel.py)
+      ),
+    }))
+)
+
+function focusContract(c) {
+  view.cx = c.px + 0.5
+  view.cy = c.py + 0.5
+  view.zoom = Math.max(view.zoom, 22)
   requestDraw()
 }
 
@@ -432,6 +495,15 @@ onBeforeUnmount(() => {
         Jump to {{ travel.label }} · {{ travel.cost }} fuel
       </button>
     </div>
+    <!-- active contracts: the in-flight mission tracker -->
+    <div v-if="contracts.length" class="contracts">
+      <h4 class="contracts-h">// CONTRACTS ({{ contracts.length }})</h4>
+      <button v-for="c in contracts" :key="c.id" class="contract-row" @pointerup="focusContract(c)">
+        <span class="c-what">{{ c.qty }} {{ c.resource }} → {{ c.toName }}</span>
+        <span class="c-meta">{{ c.dist }} panels · ¢{{ c.reward }}</span>
+      </button>
+    </div>
+
     <p class="hint">drag to pan · scroll/pinch to zoom · tap to inspect · tap twice for waypoint</p>
   </div>
 </template>
@@ -467,6 +539,53 @@ onBeforeUnmount(() => {
 .bar button,
 .bar .points-chip {
   pointer-events: auto;
+}
+
+.contracts {
+  position: absolute;
+  left: calc(12px + var(--sal));
+  bottom: calc(40px + var(--sab, 0px));
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(10, 16, 23, 0.72);
+  border: 1px solid var(--line);
+  padding: 8px 10px;
+}
+
+.contracts-h {
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  color: var(--amber);
+  margin: 0 0 4px;
+}
+
+.contract-row {
+  font-family: inherit;
+  background: transparent;
+  border: none;
+  color: #dfe4e0;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 2px;
+}
+
+.contract-row:hover .c-what {
+  color: var(--amber);
+}
+
+.c-what {
+  font-size: 12px;
+}
+
+.c-meta {
+  font-size: 10px;
+  color: #6f7a74;
+  letter-spacing: 0.1em;
 }
 
 .readout {

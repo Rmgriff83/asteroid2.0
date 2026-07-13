@@ -62,6 +62,11 @@ const deliverable = computed(() =>
   )
 )
 
+// everything active that ISN'T completable right here (no double listing)
+const inTransit = computed(() =>
+  activeMissions.value.filter((m) => !deliverable.value.includes(m))
+)
+
 function canAccept(offer) {
   if (offer.kind !== 'courier') return true
   return playerStore.canAddCargo(offer.resource, offer.qty)
@@ -73,9 +78,14 @@ function accept(offer) {
   playerStore.missions.push({ ...offer, state: 'active' })
   addPermanentKey(`${offer.from.px},${offer.from.py}`)
   addPermanentKey(`${offer.to.px},${offer.to.py}`)
-  if (!playerStore.waypoints.some((w) => w.px === offer.to.px && w.py === offer.to.py)) {
-    playerStore.waypoints.push({ px: offer.to.px, py: offer.to.py })
-  }
+  // one PROTECTED waypoint per mission (map taps can't remove these; the
+  // renderer dedupes overlapping markers)
+  playerStore.waypoints.push({
+    px: offer.to.px,
+    py: offer.to.py,
+    missionId: offer.id,
+    name: offer.to.name,
+  })
   offers.value = offers.value.filter((o) => o.id !== offer.id)
   playerStore.save()
 }
@@ -86,9 +96,9 @@ function deliver(mission) {
   currencyService.credit(mission.reward, `mission ${mission.id}`)
   mission.state = 'done'
   playerStore.missions = playerStore.missions.filter((m) => m.state === 'active')
-  playerStore.waypoints = playerStore.waypoints.filter(
-    (w) => !(w.px === mission.to.px && w.py === mission.to.py)
-  )
+  // remove only THIS mission's marker — manual waypoints and other missions
+  // sharing the destination keep theirs
+  playerStore.waypoints = playerStore.waypoints.filter((w) => w.missionId !== mission.id)
   playerStore.save()
 }
 
@@ -190,19 +200,27 @@ function undock() {
       </div>
     </div>
 
-    <div class="panel-box">
-      <h3 class="section-h">// MISSIONS</h3>
+    <!-- YOUR deliveries first, unmistakably separate from new contracts -->
+    <div v-if="deliverable.length" class="panel-box deliveries">
+      <h3 class="section-h mint">// YOUR DELIVERIES — ARRIVED</h3>
       <div v-for="m in deliverable" :key="'d' + m.id" class="row mission-done">
-        <span>DELIVER {{ m.qty }} {{ RESOURCES[m.resource]?.name }} — arrived!</span>
+        <span>DELIVER {{ m.qty }} {{ RESOURCES[m.resource]?.name }}</span>
         <button class="retro-btn small" @pointerup="deliver(m)">Complete · ¢{{ m.reward }}</button>
       </div>
-      <div v-for="m in activeMissions" :key="'a' + m.id" class="row dim">
+    </div>
+
+    <div class="panel-box">
+      <h3 class="section-h">
+        // MISSIONS<span v-if="activeMissions.length"> ({{ activeMissions.length }} ACTIVE)</span>
+      </h3>
+      <div v-for="m in inTransit" :key="'a' + m.id" class="row dim">
         <span>
           {{ m.qty }} {{ RESOURCES[m.resource]?.name }} → {{ m.to.name }}
           ({{ m.to.px }},{{ m.to.py }})
         </span>
         <span class="tag">IN TRANSIT</span>
       </div>
+      <h4 v-if="offers.length" class="sub-h">// NEW CONTRACTS</h4>
       <div v-for="o in offers" :key="o.id" class="row">
         <span>
           <b>{{ o.kind === 'courier' ? 'COURIER' : 'SUPPLY' }}</b>
@@ -325,4 +343,20 @@ function undock() {
   color: var(--mint);
 }
 
+.deliveries {
+  border-color: var(--mint);
+  box-shadow: 0 0 14px rgba(125, 255, 216, 0.12);
+}
+
+.section-h.mint {
+  color: var(--mint);
+}
+
+.sub-h {
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  color: var(--ice);
+  opacity: 0.7;
+  margin: 8px 0 4px;
+}
 </style>
