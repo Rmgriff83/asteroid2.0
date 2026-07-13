@@ -11,6 +11,7 @@ import { ITEMS } from '../game/data/resources'
 import { hash32, mulberry32 } from '../game/utils/rng'
 import { getAuthored } from '../game/galaxy/authored'
 import { worldState, addPermanentKey } from '../game/systems/WorldDiffs'
+import CockpitWindow from './CockpitWindow.vue'
 
 const mods = computed(() => getModifiers(playerStore.perks))
 const station = computed(() => playerStore.dockedStation)
@@ -131,11 +132,20 @@ function undock() {
 
 <template>
   <div class="screen station">
+    <!-- the promenade window: the panel's actual space environment, live —
+         same deterministic view the ship cockpit renders -->
+    <CockpitWindow :chrome="false" />
+    <div class="vignette"></div>
+
     <header class="bar">
       <h2 class="heading">{{ station?.name?.toUpperCase() || 'DOCKED' }}</h2>
-      <span class="points-chip">¢ {{ playerStore.credits }}</span>
+      <div class="bar-right">
+        <span class="points-chip">¢ {{ playerStore.credits }}</span>
+        <button class="retro-btn small undock" @pointerup="undock">Undock</button>
+      </div>
     </header>
 
+    <div class="consoles">
     <div class="panel-box">
       <h3 class="section-h">// SERVICES</h3>
       <div class="row">
@@ -204,24 +214,45 @@ function undock() {
       </div>
       <p v-if="!offers.length && !activeMissions.length" class="empty">no contracts today</p>
     </div>
-
-    <button class="retro-btn undock" @pointerup="undock">Undock</button>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .station {
-  background: var(--panel);
-  justify-content: flex-start;
-  align-items: stretch;
-  gap: 14px;
-  overflow-y: auto;
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  background: #05070b; /* the window canvas covers this */
+  overflow: hidden;
+}
+
+/* legibility falloff over the live window */
+.vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 140px rgba(0, 0, 0, 0.75);
+  background: linear-gradient(90deg, transparent 42%, rgba(4, 8, 11, 0.5) 62%);
 }
 
 .bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 14px 20px 10px;
+  background: linear-gradient(180deg, rgba(4, 8, 11, 0.85), transparent);
+}
+
+.bar-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 .heading {
@@ -230,9 +261,28 @@ function undock() {
   text-shadow: 0 0 12px rgba(125, 255, 216, 0.7);
 }
 
+/* the services live in a console column on the right — the left half stays
+   clear window onto the panel */
+.consoles {
+  position: absolute;
+  top: 62px;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  width: min(46%, 540px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 16px 16px;
+  box-sizing: border-box;
+}
+
 .panel-box {
   border: 1px solid var(--line);
   padding: 12px 16px;
+  background: rgba(10, 16, 23, 0.72);
+  flex: none;
 }
 
 .section-h {
@@ -275,8 +325,4 @@ function undock() {
   color: var(--mint);
 }
 
-.undock {
-  align-self: center;
-  margin-top: 6px;
-}
 </style>
