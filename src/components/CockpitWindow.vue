@@ -15,6 +15,7 @@ import { getShip } from '../game/data/ships'
 import { getShipAccent } from '../game/data/accents'
 import { ITEMS } from '../game/data/resources'
 import { hash32 } from '../game/utils/rng'
+import { planetTheme } from '../game/data/planetTheme'
 import { PANEL_W, PANEL_H } from '../game/galaxy/constants'
 
 const props = defineProps({
@@ -44,14 +45,6 @@ const FOV = (95 * Math.PI) / 180
 let horizonCur = props.horizon
 const FADE_NEAR = 300
 const FADE_FAR = 1600
-
-const PLANET_STYLE = {
-  rocky: '#cdbfa8',
-  gas: '#ffca7a',
-  ice: '#aee6ff',
-  lava: '#ff8a5c',
-  ringed: '#d8c9f0',
-}
 
 function hexColor(n) {
   return '#' + n.toString(16).padStart(6, '0')
@@ -205,7 +198,7 @@ function draw(now) {
     const p = project(P.x, P.y, altOf(spec.seed, 333) * 0.6, w, h, focal)
     if (p) {
       const r = (P.radius * focal) / p.d
-      const color = PLANET_STYLE[P.type] || PLANET_STYLE.rocky
+      const color = planetTheme(P.type).strokeCss
       ctx.globalAlpha = distAlpha(p.d)
       ctx.fillStyle = color + '20'
       ctx.beginPath()

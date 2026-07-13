@@ -4,17 +4,10 @@ import Phaser from 'phaser'
 import { mulberry32 } from '../utils/rng'
 import { randRange, planetCaptureRadius } from '../utils/geometry'
 import { ITEMS } from '../data/resources'
+import { planetTheme } from '../data/planetTheme'
 import { storedFor, msToFull } from '../systems/baseYield'
 
 const FONT = '"Space Mono", monospace'
-
-const TYPE_STYLE = {
-  rocky: { stroke: 0xcdbfa8, fill: 0x2c2822 },
-  gas: { stroke: 0xffca7a, fill: 0x33290f },
-  ice: { stroke: 0xaee6ff, fill: 0x14262e },
-  lava: { stroke: 0xff8a5c, fill: 0x2e130b },
-  ringed: { stroke: 0xd8c9f0, fill: 0x241f30 },
-}
 
 export default class Planet extends Phaser.GameObjects.Container {
   constructor(scene, spec) {
@@ -78,7 +71,7 @@ export default class Planet extends Phaser.GameObjects.Container {
   draw() {
     const { type, radius, visualSeed, nodes, baseSite } = this.spec
     const rand = mulberry32(visualSeed)
-    const style = TYPE_STYLE[type] || TYPE_STYLE.rocky
+    const style = planetTheme(type)
     const g = this.gfx
     g.clear()
 

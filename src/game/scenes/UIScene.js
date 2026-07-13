@@ -57,14 +57,31 @@ export default class UIScene extends Phaser.Scene {
     this.onDockAvailable = (available) => this.dockBtn.setVisible(available)
     EventBus.on('dock-available', this.onDockAvailable)
 
+    // one slot, two states: ESTABLISH (purchase, shows the build cost, dimmed
+    // when unaffordable) at an unbuilt base site → LAND once the base exists
     this.landBtn = this.makeButton('LAND', 34, '12px').setVisible(false)
-    this.landBtn.on('pointerdown', () => EventBus.emit('land'))
-    this.onLandAvailable = (available) => this.landBtn.setVisible(available)
+    this.landCost = this.add
+      .text(0, 14, '15 FE · 8 SI', { fontFamily: FONT, fontSize: '8px', color: '#ffd67a' })
+      .setOrigin(0.5)
+      .setVisible(false)
+    this.landBtn.add(this.landCost)
+    this.landState = { available: false, hasBase: false, canAfford: false }
+    this.landBtn.on('pointerdown', () => this.landAction())
+    this.onLandAvailable = (state) => {
+      this.landState = state
+      this.landBtn.setVisible(state.available)
+      if (!state.available) return
+      this.landBtn.label.setText(state.hasBase ? 'LAND' : 'ESTABLISH')
+      this.landBtn.label.setFontSize(state.hasBase ? '12px' : '9px')
+      this.landBtn.label.setY(state.hasBase ? 0 : -4)
+      this.landCost.setVisible(!state.hasBase)
+      this.landBtn.setAlpha(state.hasBase || state.canAfford ? 1 : 0.35)
+    }
     EventBus.on('land-available', this.onLandAvailable)
 
     this.input.keyboard.on('keydown-E', () => {
       if (this.dockBtn.visible) EventBus.emit('dock')
-      else if (this.landBtn.visible) EventBus.emit('land')
+      else if (this.landBtn.visible) this.landAction()
     })
 
     this.pauseBtn = this.makeButton('| |', 22, '13px')
@@ -266,6 +283,14 @@ export default class UIScene extends Phaser.Scene {
     }
   }
 
+  // the land slot's action depends on its state: purchase first, then land
+  landAction() {
+    const s = this.landState
+    if (!s.available) return
+    if (s.hasBase) EventBus.emit('land')
+    else if (s.canAfford) EventBus.emit('establish-base')
+  }
+
   makeButton(label, radius, fontSize) {
     const c = this.add.container(0, 0).setDepth(60)
     const ring = this.add.graphics()
@@ -279,6 +304,7 @@ export default class UIScene extends Phaser.Scene {
       .setOrigin(0.5)
     c.add([ring, arc, text])
     c.arcGfx = arc
+    c.label = text
     c.btnRadius = radius
     c.setInteractive(
       new Phaser.Geom.Circle(0, 0, radius + 14),

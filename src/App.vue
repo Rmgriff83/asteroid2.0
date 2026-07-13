@@ -15,7 +15,8 @@ import StoreScreen from './components/StoreScreen.vue'
 import PauseOverlay from './components/PauseOverlay.vue'
 import StationScreen from './components/StationScreen.vue'
 import StarMapScreen from './components/StarMapScreen.vue'
-import BaseScreen from './components/BaseScreen.vue'
+import BaseShell from './components/base/BaseShell.vue'
+import LandingSequence from './components/LandingSequence.vue'
 import CockpitShell from './components/cockpit/CockpitShell.vue'
 import DialogueOverlay from './components/DialogueOverlay.vue'
 
@@ -59,6 +60,19 @@ function onBackButton() {
     }
   } else if (playerStore.screen === 'store') {
     playerStore.screen = playerStore.storeReturnsTo === 'game' ? 'game' : 'menu'
+  } else if (playerStore.screen === 'landing') {
+    // skip the descent cutscene straight into the base
+    playerStore.screen = 'base'
+  } else if (playerStore.screen === 'base') {
+    // lift off (previously this fell through and exited the app); a base
+    // opened from a widget deep link has no flight session to resume
+    if (playerStore.baseReturnsTo === 'menu') {
+      playerStore.baseReturnsTo = 'game'
+      playerStore.screen = 'menu'
+    } else {
+      playerStore.screen = 'game'
+      EventBus.emit('resume-game')
+    }
   } else if (playerStore.screen === 'game' && !playerStore.paused) {
     playerStore.paused = true
     EventBus.emit('pause-game')
@@ -104,7 +118,11 @@ onBeforeUnmount(() => {
     :is="AdminGalaxyView"
     v-else-if="AdminGalaxyView && playerStore.screen === 'admin'"
   />
-  <BaseScreen
+  <LandingSequence
+    v-else-if="playerStore.screen === 'landing'"
+    :panel-key="playerStore.landing.panelKey"
+  />
+  <BaseShell
     v-else-if="playerStore.screen === 'base'"
     :panel-key="playerStore.landing.panelKey"
     :resource-type="playerStore.landing.resourceType"

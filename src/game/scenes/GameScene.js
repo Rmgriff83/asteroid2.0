@@ -6,7 +6,7 @@ import EnemyBullet from '../objects/EnemyBullet'
 import Enemy from '../objects/Enemy'
 import ResourcePickup from '../objects/ResourcePickup'
 import Planet from '../objects/Planet'
-import { DOCK_RANGE } from '../objects/SpaceStation'
+import { DOCK_RANGE, CORE_R } from '../objects/SpaceStation'
 import GroupCoordinator from '../systems/GroupCoordinator'
 import { currencyService } from '../../services/currencyService'
 import { sfx } from '../../services/sfx'
@@ -20,7 +20,16 @@ import { playerStore } from '../../stores/playerStore'
 import { getShipAccent } from '../data/accents'
 import { generatePanel, panelKey } from '../galaxy/panelGen'
 import { getAuthored } from '../galaxy/authored'
-import { planetCaptureRadius } from '../utils/geometry'
+import { motion } from '../../services/motion'
+import { establishBase, canAffordBase } from '../systems/bases'
+import {
+  planetCaptureRadius,
+  starCaptureRadius,
+  STATION_CAPTURE_RADIUS,
+  STATION_FIELD_MU,
+  STATION_ORBIT_VMAX,
+  STATION_FIELD_INNER,
+} from '../utils/geometry'
 import { ASTEROID_TIERS } from '../galaxy/constants'
 import { spawnPanel } from '../systems/PanelSpawner'
 import {
@@ -57,7 +66,7 @@ export default class GameScene extends Phaser.Scene {
     this.anomaly = null
     this.starfield = null
     this.dockAvailable = false
-    this.landAvailable = false
+    this.landAvailable = null // { available, hasBase, canAfford }
     this.bullets = this.physics.add.group({
       classType: Bullet,
       maxSize: 48,
@@ -127,6 +136,7 @@ export default class GameScene extends Phaser.Scene {
     this.onTeleport = ({ px, py }) => this.teleport(px, py)
     this.onDock = () => this.dock()
     this.onLand = () => this.land()
+    this.onEstablishBase = () => this.tryEstablishBase()
     // consumables used from the cargo terminal
     this.onConsume = ({ type }) => {
       const use = ITEMS[type]?.use
@@ -163,6 +173,7 @@ export default class GameScene extends Phaser.Scene {
     EventBus.on('debug-teleport', this.onTeleport)
     EventBus.on('dock', this.onDock)
     EventBus.on('land', this.onLand)
+    EventBus.on('establish-base', this.onEstablishBase)
     EventBus.on('undock', this.onUndock)
     EventBus.on('consume-item', this.onConsume)
     EventBus.on('jettison', this.onJettison)
@@ -181,6 +192,7 @@ export default class GameScene extends Phaser.Scene {
       EventBus.off('debug-teleport', this.onTeleport)
       EventBus.off('dock', this.onDock)
       EventBus.off('land', this.onLand)
+      EventBus.off('establish-base', this.onEstablishBase)
       EventBus.off('undock', this.onUndock)
       EventBus.off('consume-item', this.onConsume)
       EventBus.off('jettison', this.onJettison)
@@ -188,22 +200,55 @@ export default class GameScene extends Phaser.Scene {
     })
   }
 
+  // Docking gets the same dive-in treatment as landing: the ship shrinks
+  // into the hex core, then the station screen opens directly (no cutscene
+  // between). Shares the landingSeq flag so input freezes and dock/land
+  // can't overlap.
   dock() {
-    if (!this.dockAvailable || !this.station) return
+    if (!this.dockAvailable || !this.station || this.landingSeq) return
     const id = this.station.spec.id
     if (!playerStore.unlockedNodes.includes(id)) {
       playerStore.unlockedNodes.push(id) // fast-travel node earned
       playerStore.save()
     }
-    playerStore.dockedStation = {
+    const payload = {
       id,
       name: this.station.spec.name,
       px: this.panels.px,
       py: this.panels.py,
     }
-    playerStore.screen = 'station'
-    sfx.dock()
-    EventBus.emit('pause-game')
+    const finish = () => {
+      // park just outside dock range with transforms restored (undock
+      // resumes clean — no collider overlap, no instant re-prompt), facing
+      // the panel center so the station window's camera looks out at the
+      // panel rather than at a wall
+      this.ship.setPosition(this.station.x, this.station.y - (DOCK_RANGE + 30))
+      this.ship.setScale(1).setAlpha(1)
+      this.ship.body.stop()
+      this.ship.rotation = Math.atan2(
+        this.scale.height / 2 - this.ship.y,
+        this.scale.width / 2 - this.ship.x
+      )
+      this.ship.invulnUntil = Math.max(this.ship.invulnUntil, this.time.now + 800)
+      this.landingSeq = false
+      playerStore.dockedStation = payload
+      playerStore.screen = 'station'
+      sfx.dock()
+      EventBus.emit('pause-game')
+    }
+    if (motion.reduced) return finish()
+    this.landingSeq = true
+    this.ship.invulnUntil = Math.max(this.ship.invulnUntil, this.time.now + 1800)
+    this.tweens.add({
+      targets: this.ship,
+      x: this.station.x,
+      y: this.station.y,
+      scale: 0.15,
+      alpha: 0,
+      duration: 1200,
+      ease: 'Sine.easeIn',
+      onComplete: finish,
+    })
   }
 
   currentSpec() {
@@ -270,7 +315,10 @@ export default class GameScene extends Phaser.Scene {
   }
 
   update(time, delta) {
-    const input = this.inputMgr.getState()
+    // the landing dive owns the ship — controls go dark until touchdown
+    const input = this.landingSeq
+      ? { targetHeading: null, turn: 0, thrust: 0, shootHeld: false, boostPressed: false }
+      : this.inputMgr.getState()
     this.ship.steer(input, time, delta)
 
     if (this.ship.active && this.ship.thrusting && time > this.nextPuffAt) {
@@ -298,7 +346,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     this.applyGravity(delta)
-    this.enforcePlanetOrbits(delta)
+    this.enforceOrbitFields(delta)
     this.coordinator.update(time)
 
     // heavy hold drags top speed: no penalty below 60% mass, −35% at full.
@@ -350,24 +398,93 @@ export default class GameScene extends Phaser.Scene {
       // at capture range run ~60–90, hence the higher threshold)
       landable = dist < planetCaptureRadius(this.planet.spec.radius) && speed < 110
     }
-    if (landable !== this.landAvailable) {
-      this.landAvailable = landable
-      EventBus.emit('land-available', landable)
+    // the UI's one action slot needs the full picture: an unbuilt site offers
+    // ESTABLISH (affordability can change while parked — mining drops cargo
+    // in), a built one offers LAND
+    const landState = {
+      available: landable,
+      hasBase: !!this.planet?.spec.hasBase,
+      canAfford: canAffordBase(),
+    }
+    const prev = this.landAvailable
+    if (
+      !prev ||
+      prev.available !== landState.available ||
+      prev.hasBase !== landState.hasBase ||
+      prev.canAfford !== landState.canAfford
+    ) {
+      this.landAvailable = landState
+      EventBus.emit('land-available', landState)
     }
   }
 
-  land() {
-    if (!this.landAvailable || !this.planet) return
-    const dominantNode = this.planet.spec.nodes[0]?.type
+  // the base mines the planet's dominant node type, falling back to the
+  // sector's dominant resource (shared by ESTABLISH and the landing payload)
+  dominantResourceType() {
+    const dominantNode = this.planet?.spec.nodes[0]?.type
     const dominantSector = Object.entries(this.panelSpec.sector.resourceWeights).sort(
       (a, b) => b[1] - a[1]
     )[0][0]
-    playerStore.landing = {
+    return dominantNode || dominantSector
+  }
+
+  // the in-flight purchase: spend the cargo cost, plant the base, and let the
+  // dome pop onto the planet from orbit — the action slot flips to LAND
+  tryEstablishBase() {
+    const P = this.planet?.spec
+    if (!this.landAvailable?.available || !P?.baseSite || P.hasBase || this.landingSeq) return
+    const base = establishBase(panelKey(this.panels.px, this.panels.py), this.dominantResourceType())
+    if (!base) return
+    P.hasBase = true
+    P.base = base
+    this.planet.draw()
+    sfx.dock()
+  }
+
+  // Phase A of the landing sequence: the ship dives into the planet disc —
+  // shrinking and fading as if descending — then the Vue skim cutscene
+  // (screen 'landing') carries the descent to the surface. Reduced motion
+  // skips both and lands instantly, exactly like the old flow.
+  land() {
+    // landing means WALKING INTO YOUR BASE — no base, no landing (the UI
+    // offers ESTABLISH instead; this guard is defense in depth)
+    if (!this.landAvailable?.available || !this.planet?.spec.hasBase || this.landingSeq) return
+    const P = this.planet.spec
+    const payload = {
       panelKey: panelKey(this.panels.px, this.panels.py),
-      resourceType: dominantNode || dominantSector,
+      resourceType: P.base?.resourceType ?? this.dominantResourceType(),
     }
-    playerStore.screen = 'base'
-    EventBus.emit('pause-game')
+    const finish = () => {
+      // park at the capture-ring edge with transforms restored BEFORE
+      // pausing, so liftoff resumes a sane ship and onPauseSync snapshots
+      // a sane pose
+      this.ship.setPosition(this.planet.x, this.planet.y - planetCaptureRadius(P.radius) + 20)
+      this.ship.setScale(1).setAlpha(1)
+      this.ship.body.stop()
+      this.ship.invulnUntil = Math.max(this.ship.invulnUntil, this.time.now + 800)
+      this.landingSeq = false
+      playerStore.landing = payload
+      playerStore.screen = motion.reduced ? 'base' : 'landing'
+      EventBus.emit('pause-game')
+    }
+    if (motion.reduced) {
+      playerStore.landing = payload
+      playerStore.screen = 'base'
+      EventBus.emit('pause-game')
+      return
+    }
+    this.landingSeq = true
+    this.ship.invulnUntil = Math.max(this.ship.invulnUntil, this.time.now + 2200)
+    this.tweens.add({
+      targets: this.ship,
+      x: this.planet.x,
+      y: this.planet.y,
+      scale: 0.15,
+      alpha: 0,
+      duration: 1600,
+      ease: 'Sine.easeIn',
+      onComplete: finish,
+    })
   }
 
   enemyFire(enemy, angle) {
@@ -431,55 +548,61 @@ export default class GameScene extends Phaser.Scene {
   // Every massive body in the panel is a gravity source with a standard
   // gravitational parameter μ (= G·M). Acceleration on any body: a = μ/r²
   // toward the source (inverse-square, min-distance softening clamp).
-  // Inside a planet's capture boundary, loose rock settles into a tangential
-  // orbit — the planet wears a ring (self-healing: mining knocks bits loose,
-  // the ring recovers them). Full-size rocks tidally shatter on capture.
-  // The ship gets a soft capture: coasting settles into orbit (where the land
-  // prompt lives); any thrust or boost pulls straight back out.
-  enforcePlanetOrbits(delta) {
-    const p = this.panelSpec?.planet
-    if (!p || !this.planet) return
-    const capture = planetCaptureRadius(p.radius)
-    const mu = p.mu ?? p.radius * p.radius * 70
+  // Inside a capture boundary, loose rock settles into a tangential orbit —
+  // the body wears a ring (self-healing: mining knocks bits loose, the ring
+  // recovers them). Natural fields (planets, stars) tidally shatter
+  // full-size rocks on capture; a station's artificial containment field
+  // holds rocks whole. The ship gets a soft capture: coasting settles into
+  // orbit (where the land/dock prompts live); any thrust or boost pulls
+  // straight back out. First field wins: planet > station > star, so a
+  // station parked inside a star's ring keeps its own held orbits.
+  enforceOrbitFields(delta) {
+    const fields = this.orbitFields
+    if (!fields?.length) return
     const blend = Math.min(1, (delta / 16.7) * 0.08)
 
     for (const rock of [...this.asteroids.getChildren()]) {
       if (!rock.active) continue
-      const dx = rock.x - p.x
-      const dy = rock.y - p.y
-      const r = Math.hypot(dx, dy) || 1
-      if (r > capture) continue
+      for (const f of fields) {
+        const dx = rock.x - f.x
+        const dy = rock.y - f.y
+        const r = Math.hypot(dx, dy) || 1
+        if (r > f.captureRadius) continue
 
-      // tidal breakup: a full-size rock can't hold together this deep
-      if (rock.radius >= ASTEROID_TIERS[0]) {
-        this.tidalShatter(rock, Math.atan2(dy, dx))
-        continue
-      }
+        // tidal breakup: a full-size rock can't hold together this deep
+        if (f.tidal && rock.radius >= ASTEROID_TIERS[0]) {
+          this.tidalShatter(rock, Math.atan2(dy, dx))
+          break
+        }
 
-      const vCirc = Math.min(150, Math.sqrt(mu / r))
-      const sign = dx * rock.body.velocity.y - dy * rock.body.velocity.x >= 0 ? 1 : -1
-      let tx = (-dy / r) * sign * vCirc
-      let ty = (dx / r) * sign * vCirc
-      // ring bits shouldn't scrape the surface
-      if (r < p.radius + 60) {
-        tx += (dx / r) * 20
-        ty += (dy / r) * 20
+        const vCirc = Math.min(f.vMax, Math.sqrt(f.mu / r))
+        const sign = dx * rock.body.velocity.y - dy * rock.body.velocity.x >= 0 ? 1 : -1
+        let tx = (-dy / r) * sign * vCirc
+        let ty = (dx / r) * sign * vCirc
+        // ring bits shouldn't scrape the surface/structure
+        if (r < f.innerRock) {
+          tx += (dx / r) * 20
+          ty += (dy / r) * 20
+        }
+        rock.body.velocity.x += (tx - rock.body.velocity.x) * blend
+        rock.body.velocity.y += (ty - rock.body.velocity.y) * blend
+        break
       }
-      rock.body.velocity.x += (tx - rock.body.velocity.x) * blend
-      rock.body.velocity.y += (ty - rock.body.velocity.y) * blend
     }
 
     if (this.ship.active && !this.ship.thrusting) {
-      const dx = this.ship.x - p.x
-      const dy = this.ship.y - p.y
-      const r = Math.hypot(dx, dy) || 1
-      if (r < capture && r > p.radius + 30) {
+      for (const f of fields) {
+        const dx = this.ship.x - f.x
+        const dy = this.ship.y - f.y
+        const r = Math.hypot(dx, dy) || 1
+        if (r > f.captureRadius || r < f.innerShip) continue
         const v = this.ship.body.velocity
-        const vCirc = Math.min(150, Math.sqrt(mu / r))
+        const vCirc = Math.min(f.vMax, Math.sqrt(f.mu / r))
         const sign = dx * v.y - dy * v.x >= 0 ? 1 : -1
         const shipBlend = Math.min(1, (delta / 16.7) * 0.03)
         v.x += ((-dy / r) * sign * vCirc - v.x) * shipBlend
         v.y += ((dx / r) * sign * vCirc - v.y) * shipBlend
+        break
       }
     }
   }
@@ -500,6 +623,7 @@ export default class GameScene extends Phaser.Scene {
 
   buildGravitySources() {
     this.gravitySources = []
+    this.orbitFields = []
     const spec = this.panelSpec
     if (spec.well) {
       this.gravitySources.push({
@@ -511,14 +635,61 @@ export default class GameScene extends Phaser.Scene {
       })
     }
     if (spec.planet) {
+      const mu = spec.planet.mu ?? spec.planet.radius * spec.planet.radius * 70
       this.gravitySources.push({
         x: spec.planet.x,
         y: spec.planet.y,
-        mu: spec.planet.mu ?? spec.planet.radius * spec.planet.radius * 70,
+        mu,
         minDist: spec.planet.radius + 40,
         killRadius: 0, // you crash on its collider instead
         // the "atmosphere" edge: no pull beyond it, orbital capture within
         captureRadius: planetCaptureRadius(spec.planet.radius),
+      })
+      this.orbitFields.push({
+        x: spec.planet.x,
+        y: spec.planet.y,
+        mu,
+        captureRadius: planetCaptureRadius(spec.planet.radius),
+        innerRock: spec.planet.radius + 60,
+        innerShip: spec.planet.radius + 30,
+        vMax: 150,
+        tidal: true, // natural gravity shatters full-size rocks
+      })
+    }
+    if (spec.station) {
+      this.gravitySources.push({
+        x: spec.station.x,
+        y: spec.station.y,
+        mu: STATION_FIELD_MU,
+        minDist: CORE_R + 40,
+        killRadius: 0, // you bump its collider, nothing eats you
+        // artificial field: hard edge, no pull beyond it (same as planets)
+        captureRadius: STATION_CAPTURE_RADIUS,
+      })
+      this.orbitFields.push({
+        x: spec.station.x,
+        y: spec.station.y,
+        mu: STATION_FIELD_MU,
+        captureRadius: STATION_CAPTURE_RADIUS,
+        innerRock: STATION_FIELD_INNER,
+        innerShip: CORE_R + 30,
+        vMax: STATION_ORBIT_VMAX,
+        tidal: false, // containment field holds rocks whole
+      })
+    }
+    if (spec.well?.kind === 'star') {
+      // the ring marks where orbit capture begins; the star's PULL still
+      // reaches the whole panel (no captureRadius on its gravity source),
+      // so long-range slingshots survive
+      this.orbitFields.push({
+        x: spec.well.x,
+        y: spec.well.y,
+        mu: spec.well.strength,
+        captureRadius: starCaptureRadius(spec.well.strength),
+        innerRock: spec.well.radius + 60,
+        innerShip: spec.well.radius + 30,
+        vMax: 280, // barely a clamp — compact stars whip captured ships fast
+        tidal: true,
       })
     }
   }

@@ -22,6 +22,7 @@ export const playerStore = reactive({
   selectedShip: 'classic',
   perks: {}, // { perkId|upgradeId: ownedTierCount }
   shipAccents: {}, // { shipId: accentKey } — cosmetic hull tint override (see data/accents.js)
+  ownedTrinkets: [], // base-decoration ids owned globally (placement is per base)
   unlockedNodes: [], // station/base ids reachable by fast travel
   missions: [],
   bases: [],
@@ -57,9 +58,11 @@ export const playerStore = reactive({
       this.selectedShip = data.selectedShip ?? 'classic'
       this.perks = data.perks ?? {}
       this.shipAccents = data.shipAccents ?? {}
+      this.ownedTrinkets = data.ownedTrinkets ?? []
       this.unlockedNodes = data.unlockedNodes ?? []
       this.missions = data.missions ?? []
-      this.bases = data.bases ?? []
+      // older saves predate per-base decoration placements
+      this.bases = (data.bases ?? []).map((b) => ({ trinkets: {}, ...b }))
       this.waypoints = data.waypoints ?? []
       this.seenDialogues = data.seenDialogues ?? []
       this.knownRecipes = data.knownRecipes ?? [...STARTER_RECIPES]
@@ -163,9 +166,10 @@ export const playerStore = reactive({
       selectedShip: this.selectedShip,
       perks: { ...this.perks },
       shipAccents: { ...this.shipAccents },
+      ownedTrinkets: [...this.ownedTrinkets],
       unlockedNodes: [...this.unlockedNodes],
       missions: this.missions.map((m) => ({ ...m })),
-      bases: this.bases.map((b) => ({ ...b })),
+      bases: this.bases.map((b) => ({ ...b, trinkets: { ...b.trinkets } })),
       waypoints: this.waypoints.map((w) => ({ ...w })),
       seenDialogues: [...this.seenDialogues],
       knownRecipes: [...this.knownRecipes],
@@ -215,6 +219,24 @@ export const playerStore = reactive({
 
   setShipAccent(shipId, key) {
     this.shipAccents[shipId] = key
+    this.save()
+  },
+
+  buyTrinket(id, price) {
+    if (this.ownedTrinkets.includes(id) || !this.spend(price)) return false
+    this.ownedTrinkets.push(id)
+    this.save()
+    return true
+  },
+
+  // place (or clear, with trinketId null) a decoration in one base's slot;
+  // ownership is global, arrangement is per base
+  setTrinket(baseId, slotKey, trinketId) {
+    const base = this.bases.find((b) => b.id === baseId)
+    if (!base) return
+    if (!base.trinkets) base.trinkets = {}
+    if (trinketId == null) delete base.trinkets[slotKey]
+    else if (this.ownedTrinkets.includes(trinketId)) base.trinkets[slotKey] = trinketId
     this.save()
   },
 
