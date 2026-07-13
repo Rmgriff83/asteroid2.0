@@ -1,10 +1,10 @@
 // Authored-feel waystation: hex core + spokes + slow-rotating outer ring.
 // Docking (proximity + low speed) is detected in GameScene.
 import Phaser from 'phaser'
-import { strokeGlowPoly } from '../utils/geometry'
+import { strokeGlowPoly, STATION_CAPTURE_RADIUS } from '../utils/geometry'
 import { mulberry32 } from '../utils/rng'
 
-const CORE_R = 34
+export const CORE_R = 34
 export const DOCK_RANGE = 120
 
 export default class SpaceStation extends Phaser.GameObjects.Container {
@@ -48,6 +48,26 @@ export default class SpaceStation extends Phaser.GameObjects.Container {
       )
     }
 
+    // capture-field boundary: an artificial containment field, so it reads
+    // as engineered — segmented emitter arcs, not a planet's continuous
+    // atmosphere line. Fixed segment count: zero rand() draws, so existing
+    // station visuals (ringR, spokes) stay seeded exactly as before.
+    this.field = scene.add.graphics()
+    this.addAt(this.field, 0) // beneath ring + core
+    const SEGS = 6
+    const span = ((Math.PI * 2) / SEGS) * 0.62
+    for (let i = 0; i < SEGS; i++) {
+      const a0 = (i / SEGS) * Math.PI * 2
+      this.field.lineStyle(4, 0x7dffd8, 0.03)
+      this.field.beginPath()
+      this.field.arc(0, 0, STATION_CAPTURE_RADIUS - 3, a0, a0 + span)
+      this.field.strokePath()
+      this.field.lineStyle(1, 0x7dffd8, 0.12)
+      this.field.beginPath()
+      this.field.arc(0, 0, STATION_CAPTURE_RADIUS, a0, a0 + span)
+      this.field.strokePath()
+    }
+
     scene.add.existing(this)
     scene.physics.add.existing(this)
     this.body.setCircle(CORE_R, -CORE_R, -CORE_R)
@@ -61,10 +81,19 @@ export default class SpaceStation extends Phaser.GameObjects.Container {
       duration: 26000,
       repeat: -1,
     })
+    // field counter-rotates against the structure — a projected effect,
+    // not a spinning part
+    this.fieldSpin = scene.tweens.add({
+      targets: this.field,
+      rotation: -Math.PI * 2,
+      duration: 52000,
+      repeat: -1,
+    })
   }
 
   destroy(fromScene) {
     if (this.spin) this.spin.stop()
+    if (this.fieldSpin) this.fieldSpin.stop()
     super.destroy(fromScene)
   }
 }

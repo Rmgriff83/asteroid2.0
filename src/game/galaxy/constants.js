@@ -11,7 +11,7 @@ export const DEFAULT_GALAXY_SEED = 0x5eed5eed
 
 // Bumped when generation output changes shape/meaning — a mismatch against the
 // saved meta re-rolls the world (diffs wiped, player profile kept).
-export const GEN_VERSION = 2
+export const GEN_VERSION = 3
 
 // Per-subsystem RNG channels. Each subsystem draws from its own derived
 // stream so adding a feature later never shifts existing panels' content.

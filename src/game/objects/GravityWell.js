@@ -5,7 +5,7 @@
 // flyable but sloppy slingshots burn.
 import Phaser from 'phaser'
 import { mulberry32 } from '../utils/rng'
-import { randRange } from '../utils/geometry'
+import { randRange, starCaptureRadius } from '../utils/geometry'
 import { STAR_TYPES } from '../data/stars'
 
 export default class GravityWell extends Phaser.GameObjects.Container {
@@ -37,6 +37,15 @@ export default class GravityWell extends Phaser.GameObjects.Container {
       this.halo.fillStyle(t.halo, 0.05 * i)
       this.halo.fillCircle(0, 0, r * (1.2 + (4 - i) * 0.85))
     }
+
+    // capture boundary — mass-scaled ring where orbital capture begins
+    // (the pull itself reaches the whole panel; on this.halo so it doesn't
+    // pulse-scale with the corona)
+    const captureR = starCaptureRadius(this.spec.strength)
+    this.halo.lineStyle(1, t.mid, 0.1)
+    this.halo.strokeCircle(0, 0, captureR)
+    this.halo.lineStyle(4, t.mid, 0.03)
+    this.halo.strokeCircle(0, 0, captureR - 3)
 
     // corona rings (pulsed)
     this.corona.lineStyle(Math.max(3, r * 0.16), t.mid, 0.16)

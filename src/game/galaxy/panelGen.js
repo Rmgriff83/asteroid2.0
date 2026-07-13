@@ -8,7 +8,16 @@ import { CH, PANEL_W, PANEL_H, ASTEROID_TIERS } from './constants'
 import { resolveSector, sectorOf, RESOURCE_TYPES } from './sectorProps'
 import { resolveSectorLayout, panelRole, roleParams, ROLE_PARAMS } from './sectorLayout'
 import { starWellSpec, STAR_TYPES } from '../data/stars'
-import { makeAsteroidVerts, randRange, planetCaptureRadius } from '../utils/geometry'
+import {
+  makeAsteroidVerts,
+  randRange,
+  planetCaptureRadius,
+  starCaptureRadius,
+  STATION_CAPTURE_RADIUS,
+  STATION_FIELD_MU,
+  STATION_ORBIT_VMAX,
+  STATION_FIELD_INNER,
+} from '../utils/geometry'
 import { PANEL_COLORS } from '../data/palette'
 import { hash32 } from '../utils/rng'
 import { ENEMY_ROLES, FLAVOR_SPAWNS } from '../data/enemies'
@@ -190,6 +199,14 @@ export function generatePanel(galaxySeed, px, py, authored = null) {
     ) {
       radius = ASTEROID_TIERS[1]
     }
+    // same rule inside a star's (mass-scaled) capture ring
+    if (
+      spec.well?.kind === 'star' &&
+      radius >= ASTEROID_TIERS[0] &&
+      Math.hypot(x - spec.well.x, y - spec.well.y) < starCaptureRadius(spec.well.strength)
+    ) {
+      radius = ASTEROID_TIERS[1]
+    }
     const ang = rockRng() * TAU
     const speed = randRange(rockRng, speedLo, speedHi)
     const verts = makeAsteroidVerts(rockRng, radius)
@@ -282,17 +299,43 @@ export function generatePanel(galaxySeed, px, py, authored = null) {
     }
   }
 
+  // rocks born inside a station's capture field start in held orbit — the
+  // artificial-field version of the planet block above, same zero-draw
+  // jitter/parity trick; a planet's natural field wins over it (ringBit)
+  if (spec.station) {
+    for (const a of spec.asteroids) {
+      if (a.ringBit) continue
+      const dx = a.x - spec.station.x
+      const dy = a.y - spec.station.y
+      const r = Math.hypot(dx, dy)
+      if (r < STATION_FIELD_INNER || r > STATION_CAPTURE_RADIUS) continue
+      const vCirc = Math.min(STATION_ORBIT_VMAX, Math.sqrt(STATION_FIELD_MU / r))
+      const oldSpeed = Math.hypot(a.vx, a.vy)
+      const jitter = 0.9 + ((oldSpeed - 20) / 90) * 0.2
+      const sign = Math.atan2(a.vy, a.vx) > 0 ? 1 : -1
+      a.vx = (-dy / r) * sign * vCirc * jitter
+      a.vy = (dx / r) * sign * vCirc * jitter
+      a.ringBit = true // shields these from the well seeding below
+    }
+  }
+
   // rocks near a well get seeded onto REAL circular orbits: v = √(μ/r)
   // tangential, ±15% jitter derived from the ALREADY-drawn speed roll —
-  // zero new RNG draws, so rock layouts stay byte-identical
+  // zero new RNG draws, so rock layouts stay byte-identical. A star's band
+  // is its mass-scaled capture ring (bigger stars hold wider, hotter rings);
+  // black holes keep their original fixed band.
   if (spec.well) {
+    const isStar = spec.well.kind === 'star'
+    const bandLo = isStar ? spec.well.radius + 60 : 40
+    const bandHi = isStar ? starCaptureRadius(spec.well.strength) : 480
+    const vClamp = isStar ? 280 : 170
     for (const a of spec.asteroids) {
       if (a.ringBit) continue
       const dx = a.x - spec.well.x
       const dy = a.y - spec.well.y
       const r = Math.hypot(dx, dy)
-      if (r < 40 || r > 480) continue
-      const vCirc = Math.min(170, Math.sqrt(spec.well.strength / r))
+      if (r < bandLo || r > bandHi) continue
+      const vCirc = Math.min(vClamp, Math.sqrt(spec.well.strength / r))
       const oldSpeed = Math.hypot(a.vx, a.vy) // the original 20–70 draw
       const jitter = 0.85 + ((oldSpeed - 20) / 50) * 0.3
       const sign = Math.atan2(a.vy, a.vx) > 0 ? 1 : -1 // parity from existing draw
