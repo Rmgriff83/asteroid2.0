@@ -935,11 +935,34 @@ export default class GameScene extends Phaser.Scene {
     const pickup = a instanceof ResourcePickup ? a : b
     if (!pickup.active || !this.ship.active) return
     const take = Math.min(pickup.units, playerStore.maxAddable(pickup.resourceType))
-    if (take <= 0) return // hold full (mass or slots) — chunk keeps floating
+    if (take <= 0) {
+      // hold full (mass or slots) — chunk keeps floating. Tell the player
+      // WHY, throttled: this overlap fires every frame while touching it.
+      if (this.time.now > (this.nextScoopWarnAt || 0)) {
+        this.nextScoopWarnAt = this.time.now + 1600
+        const item = ITEMS[pickup.resourceType]
+        const massRoom = playerStore.massMax() - playerStore.cargoMass()
+        const reason = Math.floor(massRoom / (item?.massPerUnit ?? 0.5)) <= 0 ? 'mass' : 'slots'
+        EventBus.emit('scoop-blocked', { type: pickup.resourceType, reason })
+      }
+      return
+    }
     playerStore.addCargo(pickup.resourceType, take)
     pickup.units -= take
     if (pickup.units <= 0) pickup.kill()
     sfx.scoop()
+    // a partial scoop already says HOLD FULL on its card — hold the blocked
+    // warn back so it doesn't stomp the richer toast next frame
+    if (pickup.units > 0) this.nextScoopWarnAt = this.time.now + 1600
+    // the pickup toast: what you got + your new hold total; `partial` means
+    // the hold filled mid-chunk and the remainder is still floating
+    EventBus.emit('resource-scooped', {
+      type: pickup.resourceType,
+      amount: take,
+      total: playerStore.cargo[pickup.resourceType] || 0,
+      partial: pickup.units > 0,
+      left: pickup.units,
+    })
   }
 
   onBulletHitObstacle(a, b) {

@@ -21,6 +21,7 @@ import BaseShell from './components/base/BaseShell.vue'
 import LandingSequence from './components/LandingSequence.vue'
 import CockpitShell from './components/cockpit/CockpitShell.vue'
 import DialogueOverlay from './components/DialogueOverlay.vue'
+import PickupToast from './components/PickupToast.vue'
 
 // dev-only chunk: tree-shaken/lazy-split out of player builds
 const AdminGalaxyView = isAdminEnabled()
@@ -133,6 +134,7 @@ onBeforeUnmount(() => {
   />
   <PauseOverlay v-if="playerStore.screen === 'game' && playerStore.paused" />
   <DialogueOverlay />
+  <PickupToast />
   <!-- one retro display: scanlines over EVERYTHING, always topmost -->
   <div class="global-scanlines"></div>
 </template>
