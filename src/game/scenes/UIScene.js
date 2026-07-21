@@ -41,6 +41,13 @@ export default class UIScene extends Phaser.Scene {
       .setShadow(0, 0, '#7dffd8', 5)
     this.lastHull = -1
 
+    // shields: ice diamonds beside the hull row (repair-only charge)
+    this.shieldText = this.add
+      .text(0, 0, '', { fontFamily: FONT, fontSize: '14px', color: '#9db8ff' })
+      .setDepth(60)
+      .setShadow(0, 0, '#9db8ff', 5)
+    this.lastShield = -1
+
     this.creditsText = this.add
       .text(0, 0, '', { fontFamily: FONT, fontSize: '13px', color: '#ffd67a' })
       .setDepth(60)
@@ -331,6 +338,8 @@ export default class UIScene extends Phaser.Scene {
     }
     this.scoreText.setPosition(16 + sa.left, 12 + sa.top)
     this.hullText.setPosition(16 + sa.left, 38 + sa.top)
+    this.shieldText.setPosition(16 + sa.left + 60, 38 + sa.top)
+    this.lastShield = -1 // re-anchor next update
     this.fuelBarPos = { x: 16 + sa.left, y: 62 + sa.top }
     this.lastFuelFrac = -1 // force redraw at new position
     this.creditsText.setPosition(16 + sa.left, 76 + sa.top)
@@ -359,6 +368,11 @@ export default class UIScene extends Phaser.Scene {
     if (gs?.ship && gs.ship.hull !== this.lastHull) {
       this.lastHull = gs.ship.hull
       this.hullText.setText('◆'.repeat(Math.max(0, gs.ship.hull)))
+    }
+    if (gs?.ship && (gs.ship.shield ?? 0) !== this.lastShield) {
+      this.lastShield = gs.ship.shield ?? 0
+      this.shieldText.setText('◇'.repeat(Math.max(0, this.lastShield)))
+      this.shieldText.setX(this.hullText.x + Math.max(0, gs.ship.maxHull) * 14 + 6)
     }
 
     if (gs?.mods) {

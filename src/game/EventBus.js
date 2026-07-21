@@ -3,7 +3,6 @@
 //   'pause-game'    Vue → Phaser: pause scenes
 //   'resume-game'   Vue → Phaser: resume scenes
 //   'quit-to-menu'  Vue → Phaser: stop game, show intro field
-//   'perks-updated' Vue → Phaser: recompute blaster modifiers
 //   'ship-changed'  Vue → Phaser: swap ship cosmetics (id)
 //   'boost-fired'   Phaser → Phaser(UI): { readyAt } for the cooldown arc
 import Phaser from 'phaser'

@@ -8,7 +8,7 @@ import { computed } from 'vue'
 import { playerStore } from '../../stores/playerStore'
 import { ITEMS, RARITY_COLORS } from '../../game/data/resources'
 import { getShip } from '../../game/data/ships'
-import { getModifiers } from '../../game/systems/modifiers'
+import { shipStats } from '../../game/systems/shipStats'
 import { resolveSector, sectorOf } from '../../game/galaxy/sectorProps'
 import { getAuthored } from '../../game/galaxy/authored'
 import { worldState } from '../../game/systems/WorldDiffs'
@@ -20,7 +20,7 @@ const CHIP_MAX = 4
 const emit = defineEmits(['open', 'exit'])
 
 const shipDef = computed(() => getShip(playerStore.selectedShip))
-const mods = computed(() => getModifiers(playerStore.perks))
+const mods = computed(() => shipStats())
 
 const stacks = computed(() =>
   Object.entries(playerStore.cargo)

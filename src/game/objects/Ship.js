@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
 import { strokeGlowPoly, strokeGlowLine } from '../utils/geometry'
 import { getShip } from '../data/ships'
+import { equippedStrokes } from '../data/augments'
 import { getShipAccent } from '../data/accents'
 import { DEFAULT_STATS } from '../systems/modifiers'
 import { playerStore } from '../../stores/playerStore'
@@ -28,6 +29,7 @@ export default class Ship extends Phaser.GameObjects.Container {
     this.boostUntil = 0
     this.boostReadyAt = 0
     this.invulnUntil = 0
+    this.shieldFlashUntil = 0
     this.thrusting = false
     this.massFactor = 1 // heavy cargo lowers top speed (set by GameScene)
     this.setMods(DEFAULT_STATS)
@@ -39,14 +41,29 @@ export default class Ship extends Phaser.GameObjects.Container {
     this.body.setDrag(mods.drag)
     this.maxHull = mods.hullMax
     if (this.hull > this.maxHull) this.hull = this.maxHull
+    // shields are repair-only: current value persists in the store, clamped
+    // to whatever the loadout provides now
+    this.maxShield = mods.shieldsMax ?? 0
+    const stored = playerStore.shipShields[this.def?.id]
+    this.shield = Math.min(stored ?? this.maxShield, this.maxShield)
   }
 
   get inReserve() {
     return playerStore.fuel <= 0.05
   }
 
-  // Returns true when the hit destroys the ship.
+  // Returns true when the hit destroys the ship. Shields (repair-only)
+  // absorb hits before the hull; the caller can read `lastHitShielded`.
   damage(now) {
+    if (this.shield > 0) {
+      this.shield -= 1
+      playerStore.setShipShield(this.def.id, this.shield)
+      this.invulnUntil = now + 1500
+      this.shieldFlashUntil = now + 350
+      this.lastHitShielded = true
+      return false
+    }
+    this.lastHitShielded = false
     this.hull -= 1
     if (this.hull <= 0) return true
     this.invulnUntil = now + 1500
@@ -60,6 +77,16 @@ export default class Ship extends Phaser.GameObjects.Container {
     strokeGlowPoly(this.gfx, this.def.verts, this.accentInt)
     for (const [[x1, y1], [x2, y2]] of this.def.extraLines) {
       strokeGlowLine(this.gfx, x1, y1, x2, y2, this.accentInt)
+    }
+    // equipped augmentation layers ride the hull in the same glow style
+    for (const s of equippedStrokes(this.def, playerStore.shipAugments[shipId] || [])) {
+      strokeGlowPoly(this.gfx, s.points, this.accentInt, { closed: s.closed, alpha: 0.85 })
+    }
+    // switching hulls re-reads that ship's persisted shield charge
+    if (this.mods) {
+      this.maxShield = this.mods.shieldsMax ?? 0
+      const stored = playerStore.shipShields[shipId]
+      this.shield = Math.min(stored ?? this.maxShield, this.maxShield)
     }
   }
 
@@ -107,6 +134,7 @@ export default class Ship extends Phaser.GameObjects.Container {
     }
 
     this.drawFlame(time, boosting)
+    this.drawShieldFlash(time)
 
     // invulnerability blink after respawn
     if (time < this.invulnUntil) {
@@ -136,6 +164,17 @@ export default class Ship extends Phaser.GameObjects.Container {
       false,
       false
     )
+  }
+
+  // brief ice ring when a shield eats a hit (drawn on the flame layer,
+  // which is cleared every frame anyway)
+  drawShieldFlash(time) {
+    if (time >= this.shieldFlashUntil) return
+    const u = (this.shieldFlashUntil - time) / 350
+    this.flame.lineStyle(2, 0x9db8ff, 0.7 * u)
+    this.flame.strokeCircle(0, 0, 18 + (1 - u) * 6)
+    this.flame.lineStyle(5, 0x9db8ff, 0.15 * u)
+    this.flame.strokeCircle(0, 0, 18 + (1 - u) * 6)
   }
 
   get noseX() {

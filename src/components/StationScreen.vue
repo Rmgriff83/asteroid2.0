@@ -4,7 +4,7 @@ import { playerStore } from '../stores/playerStore'
 import { EventBus } from '../game/EventBus'
 import { currencyService } from '../services/currencyService'
 import { RESOURCES, FUEL_PRICE } from '../game/data/resources'
-import { getModifiers } from '../game/systems/modifiers'
+import { shipStats } from '../game/systems/shipStats'
 import { generateOffers } from '../game/data/missions'
 import { RECIPES, blueprintPrice } from '../game/data/recipes'
 import { ITEMS } from '../game/data/resources'
@@ -13,7 +13,7 @@ import { getAuthored } from '../game/galaxy/authored'
 import { worldState, addPermanentKey } from '../game/systems/WorldDiffs'
 import CockpitWindow from './CockpitWindow.vue'
 
-const mods = computed(() => getModifiers(playerStore.perks))
+const mods = computed(() => shipStats())
 const station = computed(() => playerStore.dockedStation)
 
 // --- missions ---
@@ -90,10 +90,22 @@ function accept(offer) {
   playerStore.save()
 }
 
+const schematicNotice = ref('')
+
 function deliver(mission) {
   if ((playerStore.cargo[mission.resource] || 0) < mission.qty) return
   playerStore.cargo[mission.resource] -= mission.qty
   currencyService.credit(mission.reward, `mission ${mission.id}`)
+  // rare contracts pay out an augment schematic on top
+  if (mission.blueprintReward) {
+    if (playerStore.foundBlueprints.includes(mission.blueprintReward)) {
+      currencyService.credit(100, 'duplicate schematic')
+      schematicNotice.value = 'DUPLICATE SCHEMATIC — ¢100 SALVAGE VALUE'
+    } else {
+      playerStore.learnAugBlueprint(mission.blueprintReward)
+      schematicNotice.value = 'SCHEMATIC RECOVERED — SEE HANGAR // AUGMENTS'
+    }
+  }
   mission.state = 'done'
   playerStore.missions = playerStore.missions.filter((m) => m.state === 'active')
   // remove only THIS mission's marker — manual waypoints and other missions
@@ -104,6 +116,24 @@ function deliver(mission) {
 
 const missingFuel = computed(() => Math.max(0, mods.value.fuelMax - playerStore.fuel))
 const refuelCost = computed(() => Math.ceil(missingFuel.value * FUEL_PRICE))
+
+// shields are repair-only — stations are where they come back
+const SHIELD_PRICE = 25 // credits per point
+const shieldCharge = computed(
+  () => playerStore.shipShields[playerStore.selectedShip] ?? mods.value.shieldsMax
+)
+const missingShield = computed(() =>
+  Math.max(0, mods.value.shieldsMax - Math.min(shieldCharge.value, mods.value.shieldsMax))
+)
+const rechargeCost = computed(() => missingShield.value * SHIELD_PRICE)
+
+function rechargeShields() {
+  if (missingShield.value <= 0) return
+  if (currencyService.debit(rechargeCost.value, 'shield recharge')) {
+    playerStore.setShipShield(playerStore.selectedShip, mods.value.shieldsMax)
+    EventBus.emit('shields-recharged')
+  }
+}
 
 const cargoRows = computed(() =>
   Object.entries(playerStore.cargo)
@@ -168,6 +198,16 @@ function undock() {
           Refuel · {{ refuelCost }}
         </button>
       </div>
+      <div v-if="mods.shieldsMax > 0" class="row">
+        <span>Shields {{ Math.min(shieldCharge, mods.shieldsMax) }} / {{ mods.shieldsMax }}</span>
+        <button
+          class="retro-btn small"
+          :disabled="missingShield <= 0 || playerStore.credits < rechargeCost"
+          @pointerup="rechargeShields"
+        >
+          Recharge · {{ rechargeCost }}
+        </button>
+      </div>
     </div>
 
     <div class="panel-box">
@@ -201,8 +241,9 @@ function undock() {
     </div>
 
     <!-- YOUR deliveries first, unmistakably separate from new contracts -->
-    <div v-if="deliverable.length" class="panel-box deliveries">
+    <div v-if="deliverable.length || schematicNotice" class="panel-box deliveries">
       <h3 class="section-h mint">// YOUR DELIVERIES — ARRIVED</h3>
+      <p v-if="schematicNotice" class="row schematic-notice">{{ schematicNotice }}</p>
       <div v-for="m in deliverable" :key="'d' + m.id" class="row mission-done">
         <span>DELIVER {{ m.qty }} {{ RESOURCES[m.resource]?.name }}</span>
         <button class="retro-btn small" @pointerup="deliver(m)">Complete · ¢{{ m.reward }}</button>
@@ -225,6 +266,10 @@ function undock() {
         <span>
           <b>{{ o.kind === 'courier' ? 'COURIER' : 'SUPPLY' }}</b>
           {{ o.qty }} {{ RESOURCES[o.resource]?.name }} → {{ o.to.name }}
+          <span
+            v-if="o.blueprintReward && !playerStore.foundBlueprints.includes(o.blueprintReward)"
+            class="tag schematic-tag"
+          >+ SCHEMATIC</span>
         </span>
         <button class="retro-btn small" :disabled="!canAccept(o)" @pointerup="accept(o)">
           Accept · ¢{{ o.reward }}
@@ -341,6 +386,17 @@ function undock() {
 
 .mission-done span {
   color: var(--mint);
+}
+
+.schematic-notice {
+  color: var(--mint);
+  font-size: 12px;
+  letter-spacing: 0.15em;
+}
+
+.schematic-tag {
+  color: var(--mint);
+  margin-left: 8px;
 }
 
 .deliveries {

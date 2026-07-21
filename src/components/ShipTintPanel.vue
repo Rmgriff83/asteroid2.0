@@ -9,12 +9,20 @@ import { EventBus } from '../game/EventBus'
 import { getShip } from '../game/data/ships'
 import { ACCENTS, ACCENT_ORDER } from '../game/data/accents'
 
+// optional target ship (the hangar paints whichever hull is being viewed);
+// defaults to the flown ship for the cargo-terminal call site
+const props = defineProps({
+  shipId: { type: String, default: null },
+})
+
+const targetId = computed(() => props.shipId ?? playerStore.selectedShip)
+
 const current = computed(
-  () => playerStore.shipAccents[playerStore.selectedShip] ?? getShip(playerStore.selectedShip).accent
+  () => playerStore.shipAccents[targetId.value] ?? getShip(targetId.value).accent
 )
 
 function pick(key) {
-  playerStore.setShipAccent(playerStore.selectedShip, key)
+  playerStore.setShipAccent(targetId.value, key)
   EventBus.emit('ship-changed', playerStore.selectedShip)
 }
 </script>

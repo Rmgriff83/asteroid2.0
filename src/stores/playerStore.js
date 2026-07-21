@@ -1,12 +1,14 @@
 // Shared reactive state for Vue screens AND Phaser scenes (both import this
-// module directly). Persisted fields: points, ownedShips, selectedShip, perks.
+// module directly). Persisted fields: points, credits, ships, parts, augments…
 import { reactive } from 'vue'
 import { loadSave } from '../services/persistence' // legacy blob — migration source only
 import { dbGet, dbPut } from '../services/db'
 import { ITEMS, STACK_CAP } from '../game/data/resources'
 import { STARTER_RECIPES } from '../game/data/recipes'
 import { getShip } from '../game/data/ships'
-import { getModifiers } from '../game/systems/modifiers'
+import { LEGACY_PART_IDS } from '../game/data/parts'
+import { getAugment, LEGACY_PERK_GRANTS } from '../game/data/augments'
+import { getShipStats } from '../game/systems/modifiers'
 
 const GRID_MAX_SLOTS = 24 // the 6×4 cargo matrix
 
@@ -20,9 +22,15 @@ export const playerStore = reactive({
   cargo: {}, // { resourceType: qty }
   ownedShips: ['classic'],
   selectedShip: 'classic',
-  perks: {}, // { perkId|upgradeId: ownedTierCount }
   shipAccents: {}, // { shipId: accentKey } — cosmetic hull tint override (see data/accents.js)
   ownedTrinkets: [], // base-decoration ids owned globally (placement is per base)
+  shipParts: {}, // { shipId: { partId: ownedTier } } — per-ship installed parts
+  ownedAugments: [], // augmentation ids owned globally (equip is per ship)
+  shipAugments: {}, // { shipId: [augmentId, ...] } — equipped visual layers
+  foundBlueprints: [], // 'bp-*' augment schematics found in the world
+  shipShields: {}, // { shipId: currentShieldPoints } — repair-only, persists
+  migratedParts: false,
+  migratedBlasters: false,
   unlockedNodes: [], // station/base ids reachable by fast travel
   missions: [],
   bases: [],
@@ -42,6 +50,7 @@ export const playerStore = reactive({
   baseReturnsTo: 'game', // 'game' | 'menu' — 'menu' when a widget deep link opened the base
   shipPose: null, // session-only: {x, y, rot} snapshot for the cockpit camera
   storeReturnsTo: 'menu', // 'menu' | 'game'
+  hangarReturnsTo: 'menu', // 'menu' | 'game'
   loaded: false,
 
   async load() {
@@ -57,9 +66,15 @@ export const playerStore = reactive({
       this.cargo = data.cargo ?? {}
       this.ownedShips = Array.isArray(data.ownedShips) ? data.ownedShips : ['classic']
       this.selectedShip = data.selectedShip ?? 'classic'
-      this.perks = data.perks ?? {}
       this.shipAccents = data.shipAccents ?? {}
       this.ownedTrinkets = data.ownedTrinkets ?? []
+      this.shipParts = data.shipParts ?? {}
+      this.ownedAugments = data.ownedAugments ?? []
+      this.shipAugments = data.shipAugments ?? {}
+      this.foundBlueprints = data.foundBlueprints ?? []
+      this.shipShields = data.shipShields ?? {}
+      this.migratedParts = data.migratedParts ?? false
+      this.migratedBlasters = data.migratedBlasters ?? false
       this.unlockedNodes = data.unlockedNodes ?? []
       this.missions = data.missions ?? []
       // older saves predate per-base decoration placements
@@ -84,6 +99,44 @@ export const playerStore = reactive({
     if (!this.migratedCredits) {
       this.credits += this.points
       this.migratedCredits = true
+      this.save()
+    }
+    // legacy global perk map ({ perkId|upgradeId: tierCount }) — no longer a
+    // live field; both migrations below read from the raw save data
+    const legacyPerks = { ...(data?.perks ?? {}) }
+    // one-time: ship upgrades used to be GLOBAL perk entries — move them
+    // onto the ship the player currently flies as per-ship parts (keeps the
+    // exact feel of their daily driver)
+    if (!this.migratedParts) {
+      const moved = {}
+      for (const id of LEGACY_PART_IDS) {
+        if (legacyPerks[id]) {
+          moved[id] = legacyPerks[id]
+          delete legacyPerks[id]
+        }
+      }
+      if (Object.keys(moved).length) {
+        this.shipParts[this.selectedShip] = {
+          ...(this.shipParts[this.selectedShip] || {}),
+          ...moved,
+        }
+      }
+      this.migratedParts = true
+      this.save()
+    }
+    // one-time: blaster perks became AUGMENTS — grant the matching augment
+    // (owned + equipped on the flown ship, since perks applied everywhere);
+    // deep tier-3 investment also unlocks the MK II blueprint + augment
+    if (!this.migratedBlasters) {
+      for (const g of LEGACY_PERK_GRANTS) {
+        const level = legacyPerks[g.perkId] || 0
+        if (level >= 1) this.grantAugment(g.augId)
+        if (g.mk2 && level >= g.mk2.minLevel) {
+          this.learnAugBlueprint(g.mk2.blueprint)
+          this.grantAugment(g.mk2.augId)
+        }
+      }
+      this.migratedBlasters = true
       this.save()
     }
     this.loaded = true
@@ -122,7 +175,10 @@ export const playerStore = reactive({
   },
 
   massMax() {
-    return getModifiers(this.perks).massMax
+    return getShipStats(getShip(this.selectedShip), {
+      parts: this.shipParts[this.selectedShip],
+      augmentIds: this.shipAugments[this.selectedShip],
+    }).massMax
   },
 
   // how many units of `type` can actually fit (mass headroom + slot/stack room)
@@ -178,9 +234,15 @@ export const playerStore = reactive({
       cargo: { ...this.cargo },
       ownedShips: [...this.ownedShips],
       selectedShip: this.selectedShip,
-      perks: { ...this.perks },
       shipAccents: { ...this.shipAccents },
       ownedTrinkets: [...this.ownedTrinkets],
+      shipParts: { ...this.shipParts },
+      ownedAugments: [...this.ownedAugments],
+      shipAugments: { ...this.shipAugments },
+      foundBlueprints: [...this.foundBlueprints],
+      shipShields: { ...this.shipShields },
+      migratedParts: this.migratedParts,
+      migratedBlasters: this.migratedBlasters,
       unlockedNodes: [...this.unlockedNodes],
       missions: this.missions.map((m) => ({ ...m })),
       bases: this.bases.map((b) => ({ ...b, trinkets: { ...b.trinkets } })),
@@ -236,6 +298,55 @@ export const playerStore = reactive({
     this.save()
   },
 
+  // ---- hangar: per-ship parts + augmentations ----
+  buyPartTier(shipId, part) {
+    if (!this.ownedShips.includes(shipId)) return false
+    const installed = this.shipParts[shipId] || {}
+    const level = installed[part.id] || 0
+    const tier = part.tiers[level]
+    if (!tier || !this.spend(tier.cost)) return false
+    this.shipParts[shipId] = { ...installed, [part.id]: level + 1 }
+    this.save()
+    return true
+  },
+
+  buyAugment(aug) {
+    if (this.ownedAugments.includes(aug.id)) return false
+    // higher tiers need their schematic FOUND first (never sold)
+    if (aug.blueprint && !this.foundBlueprints.includes(aug.blueprint)) return false
+    if (!this.spend(aug.price)) return false
+    this.ownedAugments.push(aug.id)
+    this.save()
+    return true
+  },
+
+  setAugmentEquipped(shipId, augId, on) {
+    if (!this.ownedAugments.includes(augId) || !getAugment(augId)) return
+    const list = this.shipAugments[shipId] || []
+    if (on && !list.includes(augId)) this.shipAugments[shipId] = [...list, augId]
+    else if (!on) this.shipAugments[shipId] = list.filter((id) => id !== augId)
+    this.save()
+  },
+
+  learnAugBlueprint(id) {
+    if (!this.foundBlueprints.includes(id)) {
+      this.foundBlueprints.push(id)
+      this.save()
+    }
+  },
+
+  // free grant (migrations, rewards): own the augment and equip it on the
+  // currently selected ship — no credit charge, no blueprint check
+  grantAugment(id) {
+    if (!this.ownedAugments.includes(id)) this.ownedAugments.push(id)
+    this.setAugmentEquipped(this.selectedShip, id, true)
+  },
+
+  setShipShield(shipId, n) {
+    this.shipShields[shipId] = Math.max(0, n)
+    this.save()
+  },
+
   buyTrinket(id, price) {
     if (this.ownedTrinkets.includes(id) || !this.spend(price)) return false
     this.ownedTrinkets.push(id)
@@ -256,7 +367,7 @@ export const playerStore = reactive({
 
   // Called after a GEN_VERSION world re-roll: everything that referenced
   // positions in the old galaxy is cleared; the player's profile (economy,
-  // ships, cargo, perks, tints, recipes, lore) is untouched.
+  // ships, cargo, parts, augments, tints, recipes, lore) is untouched.
   resetWorldCoupledState() {
     this.bases = []
     this.unlockedNodes = []
@@ -264,14 +375,5 @@ export const playerStore = reactive({
     this.missions = []
     this.dockedStation = null
     this.currentPanel = { px: 0, py: 0 }
-  },
-
-  buyPerkTier(perk) {
-    const level = this.perks[perk.id] || 0
-    const tier = perk.tiers[level]
-    if (!tier || !this.spend(tier.cost)) return false
-    this.perks[perk.id] = level + 1
-    this.save()
-    return true
   },
 })

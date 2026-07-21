@@ -14,6 +14,7 @@ import { syncWidgetFeed } from './services/widgetFeed'
 import SplashScreen from './components/SplashScreen.vue'
 import MainMenu from './components/MainMenu.vue'
 import StoreScreen from './components/StoreScreen.vue'
+import HangarScreen from './components/HangarScreen.vue'
 import PauseOverlay from './components/PauseOverlay.vue'
 import StationScreen from './components/StationScreen.vue'
 import StarMapScreen from './components/StarMapScreen.vue'
@@ -64,6 +65,8 @@ function onBackButton() {
     }
   } else if (playerStore.screen === 'store') {
     playerStore.screen = playerStore.storeReturnsTo === 'game' ? 'game' : 'menu'
+  } else if (playerStore.screen === 'hangar') {
+    playerStore.screen = playerStore.hangarReturnsTo === 'game' ? 'game' : 'menu'
   } else if (playerStore.screen === 'landing') {
     // skip the descent cutscene straight into the base
     playerStore.screen = 'base'
@@ -116,6 +119,7 @@ onBeforeUnmount(() => {
   <SplashScreen v-if="playerStore.screen === 'splash'" />
   <MainMenu v-else-if="playerStore.screen === 'menu'" />
   <StoreScreen v-else-if="playerStore.screen === 'store'" />
+  <HangarScreen v-else-if="playerStore.screen === 'hangar'" />
   <StationScreen v-else-if="playerStore.screen === 'station'" />
   <StarMapScreen v-else-if="playerStore.screen === 'map'" />
   <CockpitShell v-else-if="playerStore.screen === 'cargo'" />

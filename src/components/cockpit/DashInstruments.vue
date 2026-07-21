@@ -5,13 +5,13 @@
 // Credits/sector/dock readouts live in the cargo console (GlanceScreen).
 import { computed } from 'vue'
 import { playerStore } from '../../stores/playerStore'
-import { getModifiers } from '../../game/systems/modifiers'
+import { shipStats } from '../../game/systems/shipStats'
 
 const props = defineProps({
   instruments: { type: Array, default: () => [] },
 })
 
-const mods = computed(() => getModifiers(playerStore.perks))
+const mods = computed(() => shipStats())
 const fuelFrac = computed(() => Math.max(0, Math.min(1, playerStore.fuel / mods.value.fuelMax)))
 
 // gauge sweep: 270° from lower-left (135°) over the top to lower-right (45°)

@@ -1,4 +1,4 @@
-// Ship upgrades — same declarative tier/effect format as perks.js, same
+// Ship upgrades — declarative tier/effect format ({stat, op, value}), same
 // aggregation in modifiers.js. Adding an upgrade later = adding one entry.
 export const UPGRADES = [
   {

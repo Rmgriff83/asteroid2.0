@@ -8,6 +8,7 @@ import { generatePanel } from '../galaxy/panelGen'
 import { RESOURCES } from './resources'
 
 const COMMON = ['ferrite', 'silicate', 'ice']
+const AUG_BLUEPRINTS = ['bp-halo', 'bp-cabin', 'bp-spine', 'bp-vapor', 'bp-gatling']
 
 // walk a deterministic ray from the origin until another station appears
 function findDestination(galaxySeed, fromPx, fromPy, rng, authored) {
@@ -44,7 +45,7 @@ export function generateOffers(galaxySeed, station, originPx, originPy, authored
     const dist = Math.hypot(dest.px - originPx, dest.py - originPy)
     const kind = rng() < 0.6 ? 'courier' : 'supply'
     const reward = Math.round(qty * (RESOURCES[resource]?.price ?? 2) * 2 + dist * 0.8)
-    offers.push({
+    const offer = {
       id: `m:${seed}:${i}`,
       kind, // courier = goods provided at origin; supply = bring your own
       resource,
@@ -52,7 +53,13 @@ export function generateOffers(galaxySeed, station, originPx, originPy, authored
       from: { stationId: station.id, name: station.name, px: originPx, py: originPy },
       to: dest,
       reward,
-    })
+    }
+    // rare high-value contracts carry an augment schematic. PURE-HASH tag —
+    // zero rng() draws, so every other offer stays byte-identical
+    if (reward > 180 && hash32(seed, 977 + i) % 6 === 0) {
+      offer.blueprintReward = AUG_BLUEPRINTS[hash32(seed, 331 + i) % AUG_BLUEPRINTS.length]
+    }
+    offers.push(offer)
   }
   return offers
 }

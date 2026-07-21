@@ -16,6 +16,7 @@ import { getShip } from '../game/data/ships'
 import { getShipAccent } from '../game/data/accents'
 import { ITEMS } from '../game/data/resources'
 import { hash32 } from '../game/utils/rng'
+import { equippedStrokes } from '../game/data/augments'
 import {
   buildSurfaceView,
   drawSurfaceFrame,
@@ -154,6 +155,14 @@ function frame(now) {
   ctx.lineWidth = 1.4 / scale
   ctx.globalAlpha = 0.95
   ctx.stroke()
+  // equipped augmentation layers on the skimming silhouette
+  ctx.globalAlpha = 0.8
+  for (const s of equippedStrokes(shipDef, playerStore.shipAugments[playerStore.selectedShip] || [])) {
+    ctx.beginPath()
+    s.points.forEach(([ax, ay], i) => (i === 0 ? ctx.moveTo(ax, ay) : ctx.lineTo(ax, ay)))
+    if (s.closed) ctx.closePath()
+    ctx.stroke()
+  }
   // thrust flicker while decelerating
   if (speed > 60) {
     ctx.strokeStyle = '#ffb35c'

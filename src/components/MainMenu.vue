@@ -19,6 +19,11 @@ function openStore() {
   playerStore.storeReturnsTo = 'menu'
   playerStore.screen = 'store'
 }
+
+function openHangar() {
+  playerStore.hangarReturnsTo = 'menu'
+  playerStore.screen = 'hangar'
+}
 </script>
 
 <template>
@@ -27,6 +32,7 @@ function openStore() {
     <p class="points-chip">{{ String(playerStore.points).padStart(6, '0') }} PTS</p>
     <div class="buttons">
       <button class="retro-btn" @pointerup="play">Play</button>
+      <button class="retro-btn" @pointerup="openHangar">Hangar</button>
       <button class="retro-btn" @pointerup="openStore">Store</button>
       <button v-if="adminEnabled" class="retro-btn admin-btn" @pointerup="openAdmin">
         Admin

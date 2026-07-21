@@ -16,6 +16,7 @@ import { getShipAccent } from '../game/data/accents'
 import { ITEMS } from '../game/data/resources'
 import { hash32 } from '../game/utils/rng'
 import { planetTheme } from '../game/data/planetTheme'
+import { equippedStrokes } from '../game/data/augments'
 import { PANEL_W, PANEL_H } from '../game/galaxy/constants'
 
 const props = defineProps({
@@ -364,6 +365,14 @@ function draw(now) {
     shipDef.verts.forEach(([vx2, vy2], i) => (i === 0 ? ctx.moveTo(vx2, vy2) : ctx.lineTo(vx2, vy2)))
     ctx.closePath()
     ctx.stroke()
+    // equipped augmentation layers on your own nose
+    ctx.globalAlpha = 0.7
+    for (const s of equippedStrokes(shipDef, playerStore.shipAugments[playerStore.selectedShip] || [])) {
+      ctx.beginPath()
+      s.points.forEach(([ax, ay], i) => (i === 0 ? ctx.moveTo(ax, ay) : ctx.lineTo(ax, ay)))
+      if (s.closed) ctx.closePath()
+      ctx.stroke()
+    }
     ctx.globalAlpha = 1
     ctx.restore()
   }

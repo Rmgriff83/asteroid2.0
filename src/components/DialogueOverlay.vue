@@ -28,6 +28,7 @@ function advance() {
   const c = active.value.consequence
   if (c?.credits) currencyService.credit(c.credits, `lore ${active.value.id}`)
   if (c?.resource) playerStore.addCargo(c.resource.type, c.resource.qty)
+  if (c?.augBlueprint) playerStore.learnAugBlueprint(c.augBlueprint)
   if (c?.recipe) playerStore.learnRecipe(c.recipe)
   if (!playerStore.seenDialogues) playerStore.seenDialogues = []
   playerStore.seenDialogues.push(active.value.id)

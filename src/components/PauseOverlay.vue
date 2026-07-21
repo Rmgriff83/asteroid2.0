@@ -12,6 +12,11 @@ function openStore() {
   playerStore.screen = 'store'
 }
 
+function openHangar() {
+  playerStore.hangarReturnsTo = 'game'
+  playerStore.screen = 'hangar'
+}
+
 function openMap() {
   playerStore.screen = 'map'
 }
@@ -34,6 +39,7 @@ function quit() {
       <button class="retro-btn" @pointerup="resume">Resume</button>
       <button class="retro-btn" @pointerup="openMap">Map</button>
       <button class="retro-btn" @pointerup="openCargo">Cargo</button>
+      <button class="retro-btn" @pointerup="openHangar">Hangar</button>
       <button class="retro-btn" @pointerup="openStore">Store</button>
       <button class="retro-btn" @pointerup="quit">Quit</button>
     </div>

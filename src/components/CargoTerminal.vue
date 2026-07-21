@@ -9,7 +9,7 @@ import { currencyService } from '../services/currencyService'
 import { ITEMS, STACK_CAP, RARITY_COLORS } from '../game/data/resources'
 import { RECIPES } from '../game/data/recipes'
 import { getShip } from '../game/data/ships'
-import { getModifiers } from '../game/systems/modifiers'
+import { shipStats } from '../game/systems/shipStats'
 import { resolveSector, sectorOf } from '../game/galaxy/sectorProps'
 import { getAuthored } from '../game/galaxy/authored'
 import { worldState } from '../game/systems/WorldDiffs'
@@ -38,7 +38,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => window.removeEventListener('resize', computeScale))
 
-const mods = computed(() => getModifiers(playerStore.perks))
+const mods = computed(() => shipStats())
 const shipDef = computed(() => getShip(playerStore.selectedShip))
 const sector = computed(() => {
   const { sx, sy } = sectorOf(playerStore.currentPanel.px, playerStore.currentPanel.py)

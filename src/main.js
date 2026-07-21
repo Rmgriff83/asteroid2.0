@@ -11,6 +11,7 @@ import { generatePanel, sectorStarAssignments } from './game/galaxy/panelGen'
 import { resolveSectorLayout } from './game/galaxy/sectorLayout'
 import { starfieldSpec } from './game/systems/Starfield'
 import { surfaceSpec } from './game/galaxy/surfaceGen'
+import { shipStats } from './game/systems/shipStats'
 import { PLANET_THEME } from './game/data/planetTheme'
 import { resolveSector } from './game/galaxy/sectorProps'
 import { getAuthored } from './game/galaxy/authored'
@@ -42,6 +43,7 @@ window.__zen = {
     generatePanel,
     surfaceSpec,
     PLANET_THEME,
+    shipStats,
     sectorStarAssignments,
     resolveSectorLayout,
     starfieldSpec,
