@@ -1,45 +1,45 @@
 <script setup>
+// The STORE is the (future) in-app-purchase page: credit packs only.
+// Ships, parts, augments and paint live in the HANGAR. Packs are
+// placeholders — dev builds grant the credits for economy testing;
+// production shows COMING SOON until real billing is wired up.
+import { ref } from 'vue'
 import { playerStore } from '../stores/playerStore'
-import { EventBus } from '../game/EventBus'
-import { SHIPS } from '../game/data/ships'
-import { PERKS } from '../game/data/perks'
-import { UPGRADES } from '../game/data/upgrades'
-import ShipPreview from './ShipPreview.vue'
+import { currencyService } from '../services/currencyService'
+import { CREDIT_PACKS } from '../game/data/creditPacks'
+
+const isDev = import.meta.env.DEV
 
 function back() {
   playerStore.screen = playerStore.storeReturnsTo === 'game' ? 'game' : 'menu'
   // returning to game keeps paused=true so the pause overlay reappears
 }
 
-function shipState(ship) {
-  if (playerStore.selectedShip === ship.id) return 'selected'
-  if (playerStore.ownedShips.includes(ship.id)) return 'owned'
-  return 'locked'
+function openHangar() {
+  playerStore.hangarReturnsTo = playerStore.storeReturnsTo
+  playerStore.screen = 'hangar'
 }
 
-function onShipTap(ship) {
-  const state = shipState(ship)
-  if (state === 'owned') {
-    playerStore.selectShip(ship.id)
-    EventBus.emit('ship-changed', ship.id)
-  } else if (state === 'locked' && playerStore.buyShip(ship.id, ship.cost)) {
-    playerStore.selectShip(ship.id)
-    EventBus.emit('ship-changed', ship.id)
+// short per-card notice ("GRANTED" / "COMING SOON")
+const flash = ref(null) // { id, text }
+let flashTimer = null
+function showFlash(id, text) {
+  flash.value = { id, text }
+  clearTimeout(flashTimer)
+  flashTimer = setTimeout(() => (flash.value = null), 1500)
+}
+
+function onPackTap(pack) {
+  if (isDev) {
+    currencyService.credit(pack.credits, `iap-dev:${pack.id}`) // money-membrane seam
+    showFlash(pack.id, 'GRANTED')
+  } else {
+    showFlash(pack.id, 'COMING SOON')
   }
 }
 
-function perkLevel(perk) {
-  return playerStore.perks[perk.id] || 0
-}
-
-function nextTier(perk) {
-  return perk.tiers[perkLevel(perk)] || null
-}
-
-function onPerkBuy(perk) {
-  if (playerStore.buyPerkTier(perk)) {
-    EventBus.emit('perks-updated')
-  }
+function onRestoreTap() {
+  showFlash('restore', 'COMING SOON')
 }
 </script>
 
@@ -51,78 +51,29 @@ function onPerkBuy(perk) {
     </header>
 
     <div class="scroller">
-      <h2 class="section-h">// SHIPS</h2>
-      <div class="ship-grid">
-        <button
-          v-for="ship in SHIPS"
-          :key="ship.id"
-          class="card ship-card"
-          :class="shipState(ship)"
-          @pointerup="onShipTap(ship)"
-        >
-          <ShipPreview :ship="ship" :size="64" />
-          <span class="name">{{ ship.name }}</span>
-          <span class="hold-spec">{{ ship.cargoSlots }} slots × {{ ship.stackCap }}</span>
-          <span class="status">
-            <template v-if="shipState(ship) === 'selected'">ACTIVE</template>
-            <template v-else-if="shipState(ship) === 'owned'">OWNED</template>
-            <template v-else>¢ {{ ship.cost }}</template>
-          </span>
-        </button>
-      </div>
+      <button class="card hangar-pointer" @pointerup="openHangar">
+        <span class="name">BLASTER MODS have moved to the HANGAR</span>
+        <span class="desc">now fitted as AUGMENTS — tap to open</span>
+      </button>
 
-      <h2 class="section-h">// BLASTER PERKS</h2>
-      <div class="perk-list">
-        <div v-for="perk in PERKS" :key="perk.id" class="card perk-card">
-          <div class="perk-info">
-            <span class="name">{{ perk.name }}</span>
-            <span class="desc">{{ perk.desc }}</span>
-            <span class="pips">
-              <i
-                v-for="(t, i) in perk.tiers"
-                :key="i"
-                class="pip"
-                :class="{ on: i < perkLevel(perk) }"
-              ></i>
-            </span>
+      <h2 class="section-h">// CREDIT PACKS</h2>
+      <p v-if="isDev" class="dev-note">DEV: taps grant credits</p>
+      <div class="pack-list">
+        <div v-for="pack in CREDIT_PACKS" :key="pack.id" class="card pack-card">
+          <div class="pack-info">
+            <span class="name">{{ pack.name }}</span>
+            <span class="amount">¢ {{ pack.credits.toLocaleString() }}</span>
+            <span v-if="flash && flash.id === pack.id" class="flash">{{ flash.text }}</span>
           </div>
-          <button
-            v-if="nextTier(perk)"
-            class="retro-btn small"
-            :disabled="playerStore.credits < nextTier(perk).cost"
-            @pointerup="onPerkBuy(perk)"
-          >
-            ¢ {{ nextTier(perk).cost }}
+          <button class="retro-btn small" @pointerup="onPackTap(pack)">
+            {{ pack.priceLabel }}
           </button>
-          <span v-else class="maxed">MAX</span>
         </div>
       </div>
 
-      <h2 class="section-h">// SHIP UPGRADES</h2>
-      <div class="perk-list">
-        <div v-for="perk in UPGRADES" :key="perk.id" class="card perk-card">
-          <div class="perk-info">
-            <span class="name">{{ perk.name }}</span>
-            <span class="desc">{{ perk.desc }}</span>
-            <span class="pips">
-              <i
-                v-for="(t, i) in perk.tiers"
-                :key="i"
-                class="pip"
-                :class="{ on: i < perkLevel(perk) }"
-              ></i>
-            </span>
-          </div>
-          <button
-            v-if="nextTier(perk)"
-            class="retro-btn small"
-            :disabled="playerStore.credits < nextTier(perk).cost"
-            @pointerup="onPerkBuy(perk)"
-          >
-            ¢ {{ nextTier(perk).cost }}
-          </button>
-          <span v-else class="maxed">MAX</span>
-        </div>
+      <div class="card restore-row" @pointerup="onRestoreTap">
+        <span class="desc">RESTORE PURCHASES</span>
+        <span v-if="flash && flash.id === 'restore'" class="flash">{{ flash.text }}</span>
       </div>
     </div>
   </div>
@@ -163,10 +114,21 @@ function onPerkBuy(perk) {
   text-shadow: 0 0 8px rgba(157, 184, 255, 0.5);
 }
 
-.ship-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-  gap: 10px;
+.dev-note {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--amber);
+  opacity: 0.7;
+  margin: -4px 0 8px;
+}
+
+.hangar-pointer {
+  width: 100%;
+  align-items: flex-start;
+  cursor: pointer;
+  border-color: var(--mint);
+  box-shadow: inset 0 0 12px rgba(125, 255, 216, 0.06);
 }
 
 .card {
@@ -182,45 +144,19 @@ function onPerkBuy(perk) {
   cursor: pointer;
 }
 
-.ship-card.selected {
-  border-color: var(--mint);
-  box-shadow: 0 0 12px rgba(125, 255, 216, 0.3), inset 0 0 12px rgba(125, 255, 216, 0.08);
-}
-
-.ship-card.locked {
-  opacity: 0.75;
-}
-
 .name {
   font-weight: 700;
   font-size: 13px;
   letter-spacing: 0.2em;
 }
 
-.status {
-  font-size: 11px;
-  color: var(--amber);
-  letter-spacing: 0.15em;
-}
-
-.hold-spec {
-  font-size: 10px;
-  color: var(--ice);
-  opacity: 0.75;
-  letter-spacing: 0.08em;
-}
-
-.ship-card.selected .status {
-  color: var(--mint);
-}
-
-.perk-list {
+.pack-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.perk-card {
+.pack-card {
   flex-direction: row;
   justify-content: space-between;
   align-items: center;
@@ -228,11 +164,23 @@ function onPerkBuy(perk) {
   cursor: default;
 }
 
-.perk-info {
+.pack-info {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
+}
+
+.amount {
+  font-size: 12px;
+  color: var(--ice);
+  letter-spacing: 0.15em;
+}
+
+.flash {
+  font-size: 10px;
+  color: var(--amber);
+  letter-spacing: 0.25em;
 }
 
 .desc {
@@ -240,27 +188,10 @@ function onPerkBuy(perk) {
   opacity: 0.7;
 }
 
-.pips {
-  display: flex;
-  gap: 5px;
-}
-
-.pip {
-  width: 14px;
-  height: 5px;
-  border: 1px solid var(--line);
-  display: inline-block;
-}
-
-.pip.on {
-  background: var(--mint);
-  border-color: var(--mint);
-  box-shadow: 0 0 6px rgba(125, 255, 216, 0.7);
-}
-
-.maxed {
-  color: var(--mint);
-  font-size: 12px;
-  letter-spacing: 0.25em;
+.restore-row {
+  margin-top: 14px;
+  flex-direction: row;
+  justify-content: center;
+  gap: 12px;
 }
 </style>
