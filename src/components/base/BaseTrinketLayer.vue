@@ -3,6 +3,8 @@
 // cousin of the cockpit TrinketLayer, but LIVE: slots are tap targets. An
 // empty slot renders as a dashed hook/outline; a filled one renders its
 // trinket art (hanging pieces sway, gated by prefers-reduced-motion).
+import { onMounted, onBeforeUnmount, ref } from 'vue'
+import { EventBus } from '../../game/EventBus'
 import TrinketArt from './TrinketArt.vue'
 
 defineProps({
@@ -12,6 +14,21 @@ defineProps({
 })
 
 const emit = defineEmits(['slot-tap'])
+
+// a purchase pulses the open slots so newcomers learn where placements live
+const pulsing = ref(false)
+let pulseTimer = 0
+const onBought = () => {
+  pulsing.value = false
+  requestAnimationFrame(() => (pulsing.value = true))
+  clearTimeout(pulseTimer)
+  pulseTimer = setTimeout(() => (pulsing.value = false), 2800)
+}
+onMounted(() => EventBus.on('trinket-bought', onBought))
+onBeforeUnmount(() => {
+  clearTimeout(pulseTimer)
+  EventBus.off('trinket-bought', onBought)
+})
 
 // hang points spread across the rail, centered (cockpit spacing)
 function hangOffsets(slots) {
@@ -26,7 +43,7 @@ function tap(area, i, placed) {
 </script>
 
 <template>
-  <div class="trinkets">
+  <div class="trinkets" :class="{ pulsing }">
     <template v-for="a in trinkets" :key="a.id">
       <!-- hanging rail over the window -->
       <div v-if="a.kind === 'hanging'" class="hanging" :style="{ left: a.x + 'px', top: a.y + 'px' }">
@@ -109,6 +126,19 @@ function tap(area, i, placed) {
 .tappable {
   pointer-events: auto;
   cursor: pointer;
+  position: absolute;
+}
+
+/* invisible fat hit pad — the dashed marks are tiny, thumbs are not */
+.tappable::after {
+  content: '';
+  position: absolute;
+  inset: -16px;
+}
+
+/* hooks are 1px-wide strings — pad extra sideways */
+.hook.tappable::after {
+  inset: -16px -26px;
 }
 
 .charm {
@@ -185,7 +215,29 @@ function tap(area, i, placed) {
   opacity: 0.8;
 }
 
+/* post-purchase attention pulse on the open slots */
+.pulsing .hook-ring,
+.pulsing .spot {
+  border-color: var(--bs-warn, #e0a850);
+  animation: slot-pulse 0.9s ease-in-out 3;
+}
+
+.pulsing .hook,
+.pulsing .spot {
+  opacity: 1;
+}
+
+@keyframes slot-pulse {
+  0%, 100% { box-shadow: none; }
+  50% { box-shadow: 0 0 12px rgba(224, 168, 80, 0.85); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .charm { animation: none; }
+
+  .pulsing .hook-ring,
+  .pulsing .spot {
+    animation: none; /* static amber highlight only */
+  }
 }
 </style>

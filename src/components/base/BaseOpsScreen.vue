@@ -7,8 +7,10 @@
 // elapsed × rate), reconstructed on demand.
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { playerStore } from '../../stores/playerStore'
+import { EventBus } from '../../game/EventBus'
 import { RESOURCES, ITEMS } from '../../game/data/resources'
 import { BASE_TRINKETS } from '../../game/data/baseTrinkets'
+import { getBaseSkin } from '../../game/data/baseSkins'
 import { storedFor, msToFull } from '../../game/systems/baseYield'
 import { syncSiloNotifications } from '../../services/notifications'
 import { syncWidgetFeed } from '../../services/widgetFeed'
@@ -68,8 +70,36 @@ function collect() {
   syncWidgetFeed()
 }
 
+const supplyNote = ref('')
+
+function placedHere(id) {
+  return Object.values(base.value?.trinkets || {}).includes(id)
+}
+
+// first free slot of the right kind on THIS base's skin areas
+function firstFreeSlot(kind) {
+  for (const area of getBaseSkin().trinkets.filter((a) => a.kind === kind)) {
+    for (let i = 0; i < (area.slots || 1); i++) {
+      const key = `${area.id}:${i}`
+      if (!base.value?.trinkets?.[key]) return key
+    }
+  }
+  return null
+}
+
+// buying PLACES the piece immediately (first free compatible spot) — it
+// should appear on the rail/shelf the moment it's bought, not sit in an
+// invisible inventory
 function buyTrinket(t) {
-  playerStore.buyTrinket(t.id, t.price)
+  if (!playerStore.buyTrinket(t.id, t.price)) return
+  const slot = base.value ? firstFreeSlot(t.kind) : null
+  if (slot) {
+    playerStore.setTrinket(base.value.id, slot, t.id)
+    supplyNote.value = ''
+  } else {
+    supplyNote.value = `ALL ${t.kind === 'hanging' ? 'RAIL' : 'SHELF'} SPOTS FULL — TAP ONE TO SWAP`
+  }
+  EventBus.emit('trinket-bought') // slot layer pulses so new spots are findable
 }
 
 const resName = computed(
@@ -114,9 +144,10 @@ const resColor = computed(() => {
     <template v-else>
       <div class="supply">
         <div class="supply-head">
-          <span class="label dim">TAP A SPOT TO PLACE</span>
+          <span class="label dim">BUYING PLACES IT — TAP A SPOT TO REARRANGE</span>
           <span class="credits">¢ {{ playerStore.credits }}</span>
         </div>
+        <p v-if="supplyNote" class="supply-note">{{ supplyNote }}</p>
         <div class="catalog">
           <div v-for="t in BASE_TRINKETS" :key="t.id" class="cat-row">
             <TrinketArt :id="t.id" class="cat-art" />
@@ -132,7 +163,8 @@ const resColor = computed(() => {
             >
               ¢{{ t.price }}
             </button>
-            <span v-else class="owned">OWNED</span>
+            <span v-else-if="placedHere(t.id)" class="owned placed">PLACED</span>
+            <span v-else class="owned unplaced">TAP A SPOT</span>
           </div>
         </div>
       </div>
@@ -389,5 +421,20 @@ const resColor = computed(() => {
   letter-spacing: 2px;
   color: #6f7a74;
   padding: 5px 4px;
+}
+
+.owned.placed {
+  color: var(--bs-accent, #cdbfa8);
+}
+
+.owned.unplaced {
+  color: var(--bs-warn, #e0a850);
+}
+
+.supply-note {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  color: var(--bs-warn, #e0a850);
 }
 </style>
