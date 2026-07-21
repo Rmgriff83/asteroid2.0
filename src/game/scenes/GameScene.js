@@ -14,7 +14,7 @@ import { ITEMS } from '../data/resources'
 import { resolveElastic } from '../systems/collide'
 import PanelManager from '../systems/PanelManager'
 import InputManager from '../systems/InputManager'
-import { getModifiers } from '../systems/modifiers'
+import { shipStats } from '../systems/shipStats'
 import { EventBus } from '../EventBus'
 import { playerStore } from '../../stores/playerStore'
 import { getShipAccent } from '../data/accents'
@@ -46,7 +46,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   create() {
-    this.mods = getModifiers(playerStore.perks)
+    this.mods = shipStats()
     this.galaxySeed = worldState.galaxySeed
     this.panels = new PanelManager(playerStore.currentPanel.px, playerStore.currentPanel.py)
 
@@ -67,6 +67,8 @@ export default class GameScene extends Phaser.Scene {
     this.starfield = null
     this.dockAvailable = false
     this.landAvailable = null // { available, hasBase, canAfford }
+    this.pursuers = [] // engaged enemies chasing across panels (session-only)
+    this.recentRocks = new Map() // last-2-departed-panels live rock snapshots
     this.bullets = this.physics.add.group({
       classType: Bullet,
       maxSize: 48,
@@ -125,13 +127,17 @@ export default class GameScene extends Phaser.Scene {
 
     this.ship.setMods(this.mods)
 
-    this.onPerksUpdated = () => {
-      this.mods = getModifiers(playerStore.perks)
+    this.onLoadoutChanged = () => {
+      this.mods = shipStats()
       this.ship.setMods(this.mods)
     }
     this.onShipChanged = (id) => {
       this.ship.setShip(id)
       this.thrustTrail.particleTint = getShipAccent(id).int
+      // stats are per-ship now: swapping hulls (or the hangar editing the
+      // flown ship's loadout) changes the live mods
+      this.mods = shipStats()
+      this.ship.setMods(this.mods)
     }
     this.onTeleport = ({ px, py }) => this.teleport(px, py)
     this.onDock = () => this.dock()
@@ -143,8 +149,16 @@ export default class GameScene extends Phaser.Scene {
       if (!use) return
       if (use.fuel) playerStore.fuel = Math.min(this.mods.fuelMax, playerStore.fuel + use.fuel)
       if (use.hull) this.ship.hull = Math.min(this.ship.maxHull, this.ship.hull + use.hull)
+      if (use.shield) {
+        this.ship.shield = Math.min(this.ship.maxShield, this.ship.shield + use.shield)
+        playerStore.setShipShield(this.ship.def.id, this.ship.shield)
+      }
       if (use.boostReset) this.ship.boostReadyAt = 0
       playerStore.save()
+    }
+    // station service: refill the flown ship's shields to max
+    this.onShieldsRecharged = () => {
+      this.ship.shield = this.ship.maxShield
     }
     this.onJettison = ({ type, units }) => {
       // scatter the stack behind the ship as re-scoopable chunks
@@ -168,7 +182,7 @@ export default class GameScene extends Phaser.Scene {
       playerStore.screen = 'game'
       EventBus.emit('resume-game')
     }
-    EventBus.on('perks-updated', this.onPerksUpdated)
+    EventBus.on('loadout-changed', this.onLoadoutChanged) // parts/augments edits
     EventBus.on('ship-changed', this.onShipChanged)
     EventBus.on('debug-teleport', this.onTeleport)
     EventBus.on('dock', this.onDock)
@@ -176,6 +190,7 @@ export default class GameScene extends Phaser.Scene {
     EventBus.on('establish-base', this.onEstablishBase)
     EventBus.on('undock', this.onUndock)
     EventBus.on('consume-item', this.onConsume)
+    EventBus.on('shields-recharged', this.onShieldsRecharged)
     EventBus.on('jettison', this.onJettison)
     // keep the current panel's diff fresh while paused (the cockpit canopy
     // renders the panel from the diff — it should match what you just did)
@@ -187,7 +202,7 @@ export default class GameScene extends Phaser.Scene {
     }
     EventBus.on('pause-game', this.onPauseSync)
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      EventBus.off('perks-updated', this.onPerksUpdated)
+      EventBus.off('loadout-changed', this.onLoadoutChanged)
       EventBus.off('ship-changed', this.onShipChanged)
       EventBus.off('debug-teleport', this.onTeleport)
       EventBus.off('dock', this.onDock)
@@ -195,6 +210,7 @@ export default class GameScene extends Phaser.Scene {
       EventBus.off('establish-base', this.onEstablishBase)
       EventBus.off('undock', this.onUndock)
       EventBus.off('consume-item', this.onConsume)
+      EventBus.off('shields-recharged', this.onShieldsRecharged)
       EventBus.off('jettison', this.onJettison)
       EventBus.off('pause-game', this.onPauseSync)
     })
@@ -259,6 +275,17 @@ export default class GameScene extends Phaser.Scene {
   // live fragments (split survivors). Pristine originals regenerate from seed.
   departPanel() {
     const key = panelKey(this.panels.px, this.panels.py)
+    // live snapshot of EVERY rock (originals + fragments) for the
+    // last-2-panels return window — session-only, never persisted
+    const liveRocks = this.asteroids
+      .getChildren()
+      .filter((a) => a.active)
+      .map((a) => a.serialize())
+    this.recentRocks.delete(key)
+    this.recentRocks.set(key, liveRocks)
+    if (this.recentRocks.size > 2) {
+      this.recentRocks.delete(this.recentRocks.keys().next().value)
+    }
     const fragments = this.asteroids
       .getChildren()
       .filter((a) => a.active && a.specIdx === -1)
@@ -282,6 +309,67 @@ export default class GameScene extends Phaser.Scene {
     this.panelDestroyed = new Set(diff?.asteroidsDestroyed || [])
     this.panelKilled = new Set(diff?.enemiesKilled || [])
     this.panelDepleted = new Set(diff?.resourcesDepleted || [])
+
+    // returning within 2 panels: swap the regenerated rocks for the live
+    // snapshot — everything exactly where you left it, still drifting
+    const cachedRocks = this.recentRocks.get(panelKey(px, py))
+    if (cachedRocks) {
+      for (const a of [...this.asteroids.getChildren()]) a.release()
+      for (const s of cachedRocks) this.asteroids.add(Asteroid.fromState(this, s))
+    }
+
+    // pursuers pour in BEHIND you: staggered delayed entries at the border
+    // you crossed, flying inward — never standing there waiting
+    this.crossingSeq = (this.crossingSeq || 0) + 1
+    if (this._spawnPursuers) {
+      this._spawnPursuers = false
+      const thisKey = panelKey(px, py)
+      const seq = this.crossingSeq
+      const w = this.scale.width
+      const h = this.scale.height
+      const entryDx = this._entryDx
+      const entryDy = this._entryDy
+      this.pursuers.forEach((p, i) => {
+        this.time.delayedCall(400 + i * 280, () => {
+          // the moment passed: player crossed on / teleported / died before
+          // this one caught up — it turns back (home was never marked)
+          if (this.crossingSeq !== seq || !this.ship?.active) return
+          const atHome = p.homeKey === thisKey && p.homeIdx >= 0
+          // chased you in a circle back to its own panel: suppress the spec
+          // copy — the pursuer IS that enemy, landing back home
+          if (atHome) {
+            const specCopy = this.enemies
+              .getChildren()
+              .find((e) => e.active && e.specIdx === p.homeIdx)
+            if (specCopy) specCopy.release()
+          }
+          let x = this.ship.x + (Math.random() - 0.5) * 120
+          let y = this.ship.y + (Math.random() - 0.5) * 120
+          if (entryDx === 1) x = 24 + i * 26
+          else if (entryDx === -1) x = w - 24 - i * 26
+          if (entryDy === 1) y = 24 + i * 26
+          else if (entryDy === -1) y = h - 24 - i * 26
+          const enemy = Enemy.obtain(this, x, y, p.role, p.params)
+          enemy.hp = p.hp
+          enemy.state = 'pursue'
+          enemy.pursuitDepth = p.depth // survives homecoming: no ping-pong resets
+          // burst in with momentum along the chase direction
+          enemy.body.velocity.set(
+            entryDx * p.params.maxSpeed * 0.8,
+            entryDy * p.params.maxSpeed * 0.8
+          )
+          if (atHome) {
+            enemy.specIdx = p.homeIdx // genuinely home again — kills record locally
+          } else {
+            enemy.homeKey = p.homeKey
+            enemy.homeIdx = p.homeIdx
+          }
+          this.enemies.add(enemy)
+          this.coordinator.add(enemy)
+        })
+      })
+    }
+
     this.buildGravitySources()
     markVisited(px, py)
     evictIfNeeded(px, py)
@@ -302,6 +390,8 @@ export default class GameScene extends Phaser.Scene {
   }
 
   teleport(px, py) {
+    this.pursuers = [] // a jump is a clean escape — nothing can follow
+    this._spawnPursuers = false
     this.departPanel()
     this.panels.px = px
     this.panels.py = py
@@ -509,7 +599,7 @@ export default class GameScene extends Phaser.Scene {
       playerStore.addPoints(3)
       currencyService.credit(2, 'enemy bounty')
       this.debris.explode(14, enemy.x, enemy.y)
-      if (enemy.specIdx >= 0) this.panelKilled.add(enemy.specIdx)
+      this.recordEnemyDeath(enemy)
       enemy.release()
     }
   }
@@ -530,10 +620,24 @@ export default class GameScene extends Phaser.Scene {
     this.debris.explode(10, enemy.x, enemy.y)
     if (enemy.hit()) {
       playerStore.addPoints(3)
-      if (enemy.specIdx >= 0) this.panelKilled.add(enemy.specIdx)
+      this.recordEnemyDeath(enemy)
       enemy.release()
     }
     this.damageShip()
+  }
+
+  // One place records an enemy death: home-panel originals go into the
+  // live panelKilled set; a pursuer killed AWAY from home writes the kill
+  // into its home panel's persisted diff so it stays dead there forever.
+  recordEnemyDeath(enemy) {
+    if (enemy.specIdx >= 0) {
+      this.panelKilled.add(enemy.specIdx)
+    } else if (enemy.homeKey && enemy.homeIdx >= 0) {
+      const diff = getDiff(enemy.homeKey) || {}
+      const killed = new Set(diff.enemiesKilled || [])
+      killed.add(enemy.homeIdx)
+      writeDiff(enemy.homeKey, { ...diff, enemiesKilled: [...killed] })
+    }
   }
 
   damageShip() {
@@ -541,7 +645,8 @@ export default class GameScene extends Phaser.Scene {
     if (this.ship.damage(this.time.now)) {
       this.destroyShip()
     } else {
-      this.debris.explode(8, this.ship.x, this.ship.y)
+      // a shield-absorbed hit reads lighter than hull damage
+      this.debris.explode(this.ship.lastHitShielded ? 4 : 8, this.ship.x, this.ship.y)
     }
   }
 
@@ -729,7 +834,7 @@ export default class GameScene extends Phaser.Scene {
       if (!e.active) continue
       if (pull(e)) {
         this.debris.explode(10, e.x, e.y)
-        if (e.specIdx >= 0) this.panelKilled.add(e.specIdx)
+        this.recordEnemyDeath(e)
         e.release()
       }
     }
@@ -763,13 +868,14 @@ export default class GameScene extends Phaser.Scene {
       playerStore.addPoints(3)
       currencyService.credit(2, 'rock crush')
       this.debris.explode(12, enemy.x, enemy.y)
-      if (enemy.specIdx >= 0) this.panelKilled.add(enemy.specIdx)
+      this.recordEnemyDeath(enemy)
       enemy.release()
       sfx.boom()
     }
   }
 
   destroyShip() {
+    this.pursuers = [] // they got you — the chase resets
     this.debris.explode(20, this.ship.x, this.ship.y)
     this.ship.explode()
     this.time.delayedCall(900, () => {
@@ -800,6 +906,39 @@ export default class GameScene extends Phaser.Scene {
 
   changePanel(dx, dy, w, h) {
     playerStore.fuel = Math.max(0, playerStore.fuel - this.transitionFuelCost())
+
+    // enemies locked on you give chase across the border: up to 4, and each
+    // gives up after its 3rd crossing. The FSM state IS the aggro signal.
+    // Pursuers KEEP their home identity — if the chase breaks anywhere (they
+    // lose you, flee, hit the cap, or give up) they simply return to their
+    // post; only an actual kill removes them from home (see recordEnemyDeath).
+    const homeKey = panelKey(this.panels.px, this.panels.py)
+    const engaged = this.enemies
+      .getChildren()
+      .filter((e) => e.active && e.state !== 'idle' && e.state !== 'flee')
+      .sort(
+        (a, b) =>
+          (a.x - this.ship.x) ** 2 +
+          (a.y - this.ship.y) ** 2 -
+          ((b.x - this.ship.x) ** 2 + (b.y - this.ship.y) ** 2)
+      )
+    this.pursuers = []
+    for (const e of engaged.slice(0, 4)) {
+      const depth = (e.pursuitDepth || 0) + 1
+      if (depth > 3) continue // gives up — flies back home
+      this.pursuers.push({
+        role: e.role,
+        params: e.p,
+        hp: e.hp,
+        depth,
+        homeKey: e.homeKey ?? homeKey,
+        homeIdx: e.homeKey ? e.homeIdx : e.specIdx,
+      })
+    }
+    this._spawnPursuers = this.pursuers.length > 0
+    this._entryDx = dx
+    this._entryDy = dy
+
     this.departPanel()
     this.panels.move(dx, dy)
 

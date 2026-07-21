@@ -89,6 +89,7 @@ export default class Asteroid extends Phaser.GameObjects.Container {
   static fromState(scene, s) {
     const a = Asteroid.obtain(scene, s.x, s.y, s.radius, s.verts, s.vx, s.vy, s.spin, s.rot)
     if (s.mineral) a.setMineral(s.mineral)
+    if (s.specIdx !== undefined) a.specIdx = s.specIdx
     return a
   }
 
@@ -103,6 +104,9 @@ export default class Asteroid extends Phaser.GameObjects.Container {
       radius: this.radius,
       verts: this.verts.map(([x, y]) => [x, y]),
       mineral: this.mineral ? { ...this.mineral } : null,
+      // originals keep their spec index so restored rocks still reconcile
+      // with the destroyed-set on later departures (fragments stay -1)
+      specIdx: this.specIdx,
     }
   }
 

@@ -17,6 +17,14 @@ export default class GroupCoordinator {
     this.assignAngles()
   }
 
+  // late joiner (cross-panel pursuers arriving after the panel spawn)
+  add(enemy) {
+    if (!this.members.includes(enemy)) {
+      this.members.push(enemy)
+      this.assignAngles()
+    }
+  }
+
   remove(enemy) {
     const i = this.members.indexOf(enemy)
     if (i >= 0) {

@@ -28,6 +28,9 @@ export default class Enemy extends Phaser.GameObjects.Container {
     this.hasToken = false
     this.surroundAngle = 0
     this.specIdx = -1
+    this.pursuitDepth = 0 // cross-panel chase counter (pooled reuse must reset)
+    this.homeKey = null // pursuers remember home: "px,py" + spec index there
+    this.homeIdx = -1
     this.burstLeft = 0
     this.nextShotAt = 0
     this.setRotation(0)
