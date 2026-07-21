@@ -10,6 +10,7 @@ import { RAW_IDS } from '../data/resources'
 export const RESOURCE_TYPES = RAW_IDS
 export const PLANET_TYPES = ['rocky', 'gas', 'ice', 'lava', 'ringed']
 export const ENEMY_FLAVORS = ['none', 'timid', 'standard', 'volatile', 'pack']
+export const SYSTEM_TYPES = ['field', 'nebula', 'cluster', 'void', 'coreward']
 
 export function sectorOf(px, py) {
   return { sx: Math.floor(px / SECTOR_SIZE), sy: Math.floor(py / SECTOR_SIZE) }
@@ -127,8 +128,11 @@ export function resolveSector(galaxySeed, sx, sy, authored = null) {
     props.starWeights = { [props.starType]: 1 }
   }
 
-  // naming derives from FINAL props so authored changes rename appropriately
-  props.name = nameSector(galaxySeed, sx, sy, props)
+  // naming derives from FINAL props so authored changes rename appropriately;
+  // an authored `name` is exact and bypasses the generator entirely
+  props.name =
+    (typeof override?.name === 'string' && override.name.trim()) ||
+    nameSector(galaxySeed, sx, sy, props)
   props.classification = classifySector(props)
   return props
 }

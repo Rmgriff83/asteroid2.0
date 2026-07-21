@@ -15,6 +15,9 @@ import { shipStats } from './game/systems/shipStats'
 import { PLANET_THEME } from './game/data/planetTheme'
 import { resolveSector } from './game/galaxy/sectorProps'
 import { getAuthored } from './game/galaxy/authored'
+import { validateAuthored } from './game/galaxy/validateAuthored'
+import { buildAuthoringKit } from './game/galaxy/authoringKit'
+import { getDialogue, getMergedPools } from './game/data/lore'
 import { DEFAULT_GALAXY_SEED } from './game/galaxy/constants'
 import {
   loadWorld,
@@ -51,6 +54,10 @@ window.__zen = {
     getAuthored,
     setWorkingCopy,
     getWorkingCopy,
+    validateAuthored,
+    buildAuthoringKit,
+    getDialogue,
+    getMergedPools,
     DEFAULT_GALAXY_SEED,
     worldState,
     getDiff,

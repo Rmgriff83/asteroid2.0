@@ -1,6 +1,8 @@
 {
+  "version": 2,
   "sectors": {},
   "panels": {
     "0,0": { "role": "temperate", "well": "none" }
-  }
+  },
+  "dialogues": []
 }

@@ -5,9 +5,11 @@
 // (property-then-placement, handoff §4).
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { playerStore } from '../../stores/playerStore'
-import { resolveSector, sectorKey, ENEMY_FLAVORS } from '../../game/galaxy/sectorProps'
+import { resolveSector, sectorKey, ENEMY_FLAVORS, SYSTEM_TYPES } from '../../game/galaxy/sectorProps'
 import { STAR_TYPE_IDS } from '../../game/data/stars'
 import { getAuthored, getWorkingCopy, setWorkingCopy } from '../../game/galaxy/authored'
+import { validateAuthored } from '../../game/galaxy/validateAuthored'
+import { buildAuthoringKit } from '../../game/galaxy/authoringKit'
 import { SECTOR_SIZE } from '../../game/galaxy/constants'
 import { worldState } from '../../game/systems/WorldDiffs'
 import { dbPut } from '../../services/db'
@@ -17,8 +19,13 @@ const canvasRef = ref(null)
 const selected = ref(null) // {sx, sy}
 const sectorView = ref(null) // {sx, sy} → panel grid open
 const paintMode = ref(false)
+const kitRadius = ref(4)
+const buildingKit = ref(false)
+const importReport = ref(null) // { ok?, errors?, warnings?, counts? }
 
 const form = reactive({
+  useName: false,
+  name: '',
   useSystemType: false,
   systemType: 'field',
   useDanger: false,
@@ -138,7 +145,7 @@ function onMove(e) {
   const dy = e.clientY - lastY
   if (Math.abs(dx) + Math.abs(dy) > 3) moved = true
   if (paintMode.value && moved) {
-    applyTo(sectorAt(e))
+    paintAt(sectorAt(e))
   } else if (moved) {
     view.cx -= dx / view.zoom
     view.cy -= dy / view.zoom
@@ -152,9 +159,8 @@ function onUp(e) {
   dragging = false
   if (moved && !paintMode.value) return
   const s = sectorAt(e)
-  if (paintMode.value) {
-    applyTo(s)
-  } else {
+  // empty brush falls through to selection, so paint mode never feels dead
+  if (!paintMode.value || !paintAt(s)) {
     selectSector(s)
   }
   requestDraw()
@@ -171,6 +177,8 @@ function selectSector(s) {
   // preload form from existing override
   const ov = getWorkingCopy().sectors[sectorKey(s.sx, s.sy)] || {}
   const base = resolveSector(worldState.galaxySeed, s.sx, s.sy, { sectors: {}, panels: {} })
+  form.useName = 'name' in ov
+  form.name = ov.name ?? base.name
   form.useSystemType = 'systemType' in ov
   form.systemType = ov.systemType ?? base.systemType
   form.useDanger = 'danger' in ov
@@ -191,6 +199,7 @@ function selectSector(s) {
 
 function buildOverride() {
   const ov = {}
+  if (form.useName && form.name.trim()) ov.name = form.name.trim()
   if (form.useSystemType) ov.systemType = form.systemType
   if (form.useDanger) ov.danger = Number(form.danger)
   if (form.useRichness) ov.richness = Number(form.richness)
@@ -202,14 +211,38 @@ function buildOverride() {
   return ov
 }
 
+// the brush is "armed" once at least one PAINTABLE field is checked —
+// `name` is a per-sector identity, only ever applied via Apply, never
+// painted (sweeping a name across sectors would duplicate it everywhere)
+const brushArmed = computed(() =>
+  form.useSystemType || form.useDanger || form.useRichness ||
+  form.useDensity || form.useEnemyFlavor || form.useStationDensity ||
+  form.useStarCount || form.useStarType
+)
+
 function applyTo(s) {
   const copy = getWorkingCopy()
   const ov = buildOverride()
   const key = sectorKey(s.sx, s.sy)
-  const next = { sectors: { ...copy.sectors }, panels: { ...copy.panels } }
+  // spread the full copy so version/dialogues survive every edit
+  const next = { ...copy, sectors: { ...copy.sectors }, panels: { ...copy.panels } }
   if (Object.keys(ov).length) next.sectors[key] = ov
   else delete next.sectors[key]
   persist(next)
+}
+
+// paint = stamp the armed override (minus name); a swept sector keeps any
+// name it already had. Returns false when the brush is empty.
+function paintAt(s) {
+  const { name: _skip, ...ov } = buildOverride()
+  if (!Object.keys(ov).length) return false
+  const copy = getWorkingCopy()
+  const key = sectorKey(s.sx, s.sy)
+  const prevName = copy.sectors[key]?.name
+  const next = { ...copy, sectors: { ...copy.sectors }, panels: { ...copy.panels } }
+  next.sectors[key] = prevName ? { name: prevName, ...ov } : ov
+  persist(next)
+  return true
 }
 
 function apply() {
@@ -220,7 +253,7 @@ function apply() {
 function clearOverride() {
   if (!selected.value) return
   const copy = getWorkingCopy()
-  const next = { sectors: { ...copy.sectors }, panels: { ...copy.panels } }
+  const next = { ...copy, sectors: { ...copy.sectors }, panels: { ...copy.panels } }
   delete next.sectors[sectorKey(selected.value.sx, selected.value.sy)]
   persist(next)
   selectSector(selected.value)
@@ -232,28 +265,67 @@ function persist(next) {
   dbPut('authored', 'workingCopy', JSON.parse(JSON.stringify(next))).catch(() => {})
 }
 
-function exportJson() {
-  const data = JSON.stringify(getWorkingCopy(), null, 2)
-  const blob = new Blob([data], { type: 'application/json' })
+function download(obj, filename) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' })
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
-  a.download = 'galaxy.json'
+  a.download = filename
   a.click()
   URL.revokeObjectURL(a.href)
 }
 
+// the merged effective layer (bundled + working copy) — this file IS the
+// shippable bundle: copy it over src/game/data/authored/galaxy.json
+function exportJson() {
+  download(getAuthored(), 'galaxy.json')
+}
+
+// world gazetteer + canon + schema rules for the offline lore writer —
+// see LORE_AUTHORING.md for the full round-trip
+function exportKit() {
+  if (buildingKit.value) return
+  buildingKit.value = true
+  // let the button repaint before the synchronous sector walk
+  requestAnimationFrame(() => {
+    try {
+      const kit = buildAuthoringKit(worldState.galaxySeed, Number(kitRadius.value), getAuthored())
+      download(kit, 'authoring-kit.json')
+    } finally {
+      buildingKit.value = false
+    }
+  })
+}
+
 function importJson(e) {
   const file = e.target.files[0]
+  e.target.value = '' // allow re-picking the same file after a fix
   if (!file) return
   const reader = new FileReader()
   reader.onload = () => {
+    let data
     try {
-      const data = JSON.parse(reader.result)
-      persist({ sectors: data.sectors || {}, panels: data.panels || {} })
-      requestDraw()
-    } catch {
-      alert('invalid JSON')
+      data = JSON.parse(reader.result)
+    } catch (parseErr) {
+      importReport.value = { errors: ['not valid JSON: ' + parseErr.message], warnings: [] }
+      return
     }
+    const res = validateAuthored(data)
+    if (!res.ok) {
+      importReport.value = { errors: res.errors, warnings: res.warnings }
+      return // nothing persisted — no partial imports
+    }
+    persist(res.normalized)
+    importReport.value = {
+      ok: true,
+      warnings: res.warnings,
+      counts: {
+        sectors: Object.keys(res.normalized.sectors).length,
+        panels: Object.keys(res.normalized.panels).length,
+        dialogues: res.normalized.dialogues.length,
+      },
+    }
+    if (selected.value) selectSector(selected.value)
+    requestDraw()
   }
   reader.readAsText(file)
 }
@@ -300,12 +372,42 @@ onBeforeUnmount(() => {
           <label class="paint-toggle">
             <input v-model="paintMode" type="checkbox" /> paint
           </label>
+          <span v-if="paintMode && !brushArmed" class="paint-hint">
+            brush empty — check fields in the inspector, then drag
+          </span>
           <button class="retro-btn small" @pointerup="exportJson">Export</button>
+          <span class="kit-tools" title="authoring kit: gazetteer of sectors within this radius of the origin — bigger = slower to build">
+            <label class="kit-label" for="kit-radius">kit radius</label>
+            <input id="kit-radius" v-model="kitRadius" class="kit-radius" type="number" min="1" max="6" />
+            <button class="retro-btn small" :disabled="buildingKit" @pointerup="exportKit">
+              {{ buildingKit ? 'Building…' : 'Export Kit' }}
+            </button>
+          </span>
           <label class="retro-btn small file-btn">
             Import<input type="file" accept=".json" @change="importJson" />
           </label>
         </div>
       </header>
+
+      <div v-if="importReport" class="import-report" :class="{ ok: importReport.ok }">
+        <div class="report-head">
+          <span v-if="importReport.ok">
+            IMPORT OK — {{ importReport.counts.sectors }} sectors ·
+            {{ importReport.counts.panels }} panels · {{ importReport.counts.dialogues }} dialogues
+          </span>
+          <span v-else>IMPORT FAILED — {{ importReport.errors.length }} ERRORS (nothing was changed)</span>
+          <button class="retro-btn small" @pointerup="importReport = null">Close</button>
+        </div>
+        <ul v-if="!importReport.ok" class="report-list">
+          <li v-for="(msg, i) in importReport.errors.slice(0, 50)" :key="'e' + i">{{ msg }}</li>
+          <li v-if="importReport.errors.length > 50" class="more">
+            … {{ importReport.errors.length - 50 }} more
+          </li>
+        </ul>
+        <ul v-if="importReport.warnings && importReport.warnings.length" class="report-list warn">
+          <li v-for="(msg, i) in importReport.warnings.slice(0, 20)" :key="'w' + i">⚠ {{ msg }}</li>
+        </ul>
+      </div>
 
       <div class="body">
         <canvas
@@ -326,11 +428,19 @@ onBeforeUnmount(() => {
           </p>
 
           <div class="field">
+            <label><input v-model="form.useName" type="checkbox" /> name</label>
+            <input
+              v-model="form.name"
+              type="text"
+              maxlength="40"
+              :disabled="!form.useName"
+              placeholder="exact sector name"
+            />
+          </div>
+          <div class="field">
             <label><input v-model="form.useSystemType" type="checkbox" /> type</label>
             <select v-model="form.systemType" :disabled="!form.useSystemType">
-              <option v-for="t in ['field', 'nebula', 'cluster', 'void', 'coreward']" :key="t">
-                {{ t }}
-              </option>
+              <option v-for="t in SYSTEM_TYPES" :key="t">{{ t }}</option>
             </select>
           </div>
           <div class="field">
@@ -484,7 +594,8 @@ onBeforeUnmount(() => {
 }
 
 .field select,
-.field input[type='range'] {
+.field input[type='range'],
+.field input[type='text'] {
   width: 100%;
   background: #0a0f1a;
   color: var(--ink);
@@ -492,6 +603,82 @@ onBeforeUnmount(() => {
   font-family: inherit;
   font-size: 11px;
   padding: 3px;
+}
+
+.kit-tools {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.kit-label {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  opacity: 0.7;
+}
+
+.paint-hint {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--amber);
+  opacity: 0.9;
+}
+
+.kit-radius {
+  width: 40px;
+  background: #0a0f1a;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 6px 4px;
+  text-align: center;
+}
+
+.import-report {
+  border: 1px solid var(--amber);
+  background: rgba(255, 179, 92, 0.06);
+  padding: 10px 12px;
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.import-report.ok {
+  border-color: var(--mint);
+  background: rgba(125, 255, 216, 0.05);
+}
+
+.report-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  letter-spacing: 0.15em;
+  color: var(--amber);
+}
+
+.import-report.ok .report-head {
+  color: var(--mint);
+}
+
+.report-list {
+  margin: 0;
+  padding-left: 16px;
+  max-height: 140px;
+  overflow-y: auto;
+  line-height: 1.6;
+  opacity: 0.9;
+}
+
+.report-list.warn {
+  color: var(--amber);
+  max-height: 80px;
+}
+
+.report-list .more {
+  opacity: 0.6;
 }
 
 .actions {

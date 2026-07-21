@@ -275,7 +275,9 @@ export function generatePanel(galaxySeed, px, py, authored = null) {
       x,
       y,
       visualSeed: hash32(seed, CH.STATION),
-      name: `${sector.name.split(' ')[0]} Station`,
+      // authored pin names win; the fallback derives from the (possibly
+      // authored) sector name
+      name: pin?.stationName || `${sector.name.split(' ')[0]} Station`,
     }
   }
 

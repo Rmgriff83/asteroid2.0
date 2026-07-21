@@ -24,6 +24,7 @@ const version = ref(0)
 const form = reactive({
   planet: 'none',
   station: false,
+  stationName: '',
   well: '',
   anomaly: '',
   resourceType: 'none',
@@ -70,6 +71,7 @@ function select(cell) {
   const pin = getWorkingCopy().panels[panelKey(cell.px, cell.py)] || {}
   form.planet = pin.planet?.type || 'none'
   form.station = !!pin.station
+  form.stationName = pin.stationName || ''
   if (pin.well === undefined) form.well = ''
   else if (pin.well === 'none') form.well = 'suppress'
   else if (typeof pin.well === 'object') form.well = `star:${pin.well.starType}`
@@ -87,6 +89,7 @@ function savePin() {
   const pin = {}
   if (form.planet !== 'none') pin.planet = { type: form.planet }
   if (form.station) pin.station = true
+  if (form.stationName.trim()) pin.stationName = form.stationName.trim()
   if (form.well === 'suppress') pin.well = 'none'
   else if (form.well.startsWith('star:')) pin.well = { kind: 'star', starType: form.well.slice(5) }
   else if (form.well) pin.well = form.well // 'blackhole' | 'star'
@@ -99,7 +102,8 @@ function savePin() {
   if (form.noEnemies) pin.noEnemies = true
 
   const copy = getWorkingCopy()
-  const next = { sectors: { ...copy.sectors }, panels: { ...copy.panels } }
+  // spread the full copy so version/dialogues survive every edit
+  const next = { ...copy, sectors: { ...copy.sectors }, panels: { ...copy.panels } }
   const key = panelKey(selected.value.px, selected.value.py)
   if (Object.keys(pin).length) next.panels[key] = pin
   else delete next.panels[key]
@@ -111,6 +115,7 @@ function savePin() {
 function removePin() {
   form.planet = 'none'
   form.station = false
+  form.stationName = ''
   form.well = ''
   form.anomaly = ''
   form.resourceType = 'none'
@@ -179,6 +184,15 @@ function flyHere() {
           <label><input v-model="form.station" type="checkbox" /> station here</label>
         </div>
         <div class="field">
+          <label>station name</label>
+          <input
+            v-model="form.stationName"
+            type="text"
+            maxlength="30"
+            placeholder="— derived from sector —"
+          />
+        </div>
+        <div class="field">
           <label>gravity well</label>
           <select v-model="form.well">
             <option value="">— procedural —</option>
@@ -192,7 +206,7 @@ function flyHere() {
         </div>
         <div class="field">
           <label>anomaly (dialogue id)</label>
-          <input v-model="form.anomaly" type="text" placeholder="e.g. void-drifter-1" />
+          <input v-model="form.anomaly" type="text" placeholder="lore.js or imported id" />
         </div>
         <div class="field">
           <label>rich resource</label>
