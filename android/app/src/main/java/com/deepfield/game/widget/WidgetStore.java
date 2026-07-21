@@ -1,4 +1,4 @@
-package com.example.asteroidzen.widget;
+package com.deepfield.game.widget;
 
 import android.content.Context;
 import android.content.SharedPreferences;

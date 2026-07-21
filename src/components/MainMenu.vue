@@ -28,7 +28,7 @@ function openHangar() {
 
 <template>
   <div class="screen menu">
-    <h1 class="title">ASTEROID&nbsp;ZEN</h1>
+    <h1 class="title">DEEPFIELD</h1>
     <p class="points-chip">{{ String(playerStore.points).padStart(6, '0') }} PTS</p>
     <div class="buttons">
       <button class="retro-btn" @pointerup="play">Play</button>

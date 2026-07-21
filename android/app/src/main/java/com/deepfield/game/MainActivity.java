@@ -1,4 +1,4 @@
-package com.example.asteroidzen;
+package com.deepfield.game;
 
 import android.os.Bundle;
 

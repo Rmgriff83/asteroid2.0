@@ -23,12 +23,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- widget deep links: asteroidzen://base/<panelKey> -->
+            <!-- widget deep links: deepfield://base/<panelKey> -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="asteroidzen" />
+                <data android:scheme="deepfield" />
             </intent-filter>
 
         </activity>

@@ -103,7 +103,7 @@ onMounted(() => {
   if (Capacitor.isNativePlatform()) {
     ScreenOrientation.lock({ orientation: 'landscape' }).catch(() => {})
     CapApp.addListener('backButton', onBackButton)
-    initDeepLinks() // widget taps: asteroidzen://base/<panelKey>
+    initDeepLinks() // widget taps: deepfield://base/<panelKey>
   }
 })
 

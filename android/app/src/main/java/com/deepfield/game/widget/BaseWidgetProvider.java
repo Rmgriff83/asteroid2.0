@@ -1,4 +1,4 @@
-package com.example.asteroidzen.widget;
+package com.deepfield.game.widget;
 
 import android.app.PendingIntent;
 import android.appwidget.AppWidgetManager;
@@ -17,7 +17,7 @@ import androidx.work.ExistingPeriodicWorkPolicy;
 import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkManager;
 
-import com.example.asteroidzen.R;
+import com.deepfield.game.R;
 
 import org.json.JSONObject;
 
@@ -83,7 +83,7 @@ public class BaseWidgetProvider extends AppWidgetProvider {
       rv.setViewVisibility(R.id.widget_body, View.GONE);
       rv.setViewVisibility(R.id.widget_empty, View.VISIBLE);
       rv.setTextViewText(
-          R.id.widget_empty, hasFeed ? "NO OUTPOSTS YET" : "OPEN ASTEROID ZEN");
+          R.id.widget_empty, hasFeed ? "NO OUTPOSTS YET" : "OPEN DEEPFIELD");
       rv.setOnClickPendingIntent(R.id.widget_root, launchIntent(ctx, null));
       return rv;
     }
@@ -117,7 +117,7 @@ public class BaseWidgetProvider extends AppWidgetProvider {
   private static PendingIntent launchIntent(Context ctx, String panelKey) {
     Intent intent;
     if (panelKey != null && !panelKey.isEmpty()) {
-      intent = new Intent(Intent.ACTION_VIEW, Uri.parse("asteroidzen://base/" + panelKey));
+      intent = new Intent(Intent.ACTION_VIEW, Uri.parse("deepfield://base/" + panelKey));
       intent.setPackage(ctx.getPackageName());
     } else {
       intent = ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName());

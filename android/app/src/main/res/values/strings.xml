@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Asteroid Zen</string>
-    <string name="title_activity_main">Asteroid Zen</string>
-    <string name="package_name">com.example.asteroidzen</string>
-    <string name="custom_url_scheme">com.example.asteroidzen</string>
+    <string name="app_name">Deepfield</string>
+    <string name="title_activity_main">Deepfield</string>
+    <string name="package_name">com.deepfield.game</string>
+    <string name="custom_url_scheme">com.deepfield.game</string>
 </resources>

@@ -2,7 +2,7 @@
 
 Full-width widgets showing an outpost's window view — the pre-rendered planet
 surface with accurate day/night + weather for each moment — plus the live silo
-fill and a one-tap deep link (`asteroidzen://base/<panelKey>`) into that base.
+fill and a one-tap deep link (`deepfield://base/<panelKey>`) into that base.
 
 ## How it works
 
@@ -11,7 +11,7 @@ fill and a one-tap deep link (`asteroidzen://base/<panelKey>`) into that base.
   base interior uses, plus a `manifest.json` (silo timestamps, colors, names).
   It syncs whenever base state changes and when the app backgrounds.
 - The in-app `WidgetFeed` Capacitor plugin writes those into:
-  - iOS: the App Group container (`group.com.example.asteroidzen.widgets`)
+  - iOS: the App Group container (`group.com.deepfield.game.widgets`)
   - Android: `filesDir/widgets/`
 - Widgets never render the scene themselves — they swap pre-rendered frames on
   schedule (iOS: one timeline entry per frame; Android: 15-min WorkManager
@@ -26,11 +26,11 @@ Everything is wired (`assembleDebug` verified). Test on a device/emulator:
 
 ```sh
 npm run build && npx cap copy android && cd android && ./gradlew installDebug
-adb shell am start -a android.intent.action.VIEW -d "asteroidzen://base/0,0"  # deep-link smoke test
+adb shell am start -a android.intent.action.VIEW -d "deepfield://base/0,0"  # deep-link smoke test
 ```
 
 Open the app once (establish a base, background the app — that writes the
-feed), then long-press the home screen → widgets → **Asteroid Zen** → place the
+feed), then long-press the home screen → widgets → **Deepfield** → place the
 4×2 widget → the config dialog lists your outposts.
 
 ## iOS — one-time Xcode setup (~2 minutes)
@@ -50,7 +50,7 @@ the extension target itself (reliable signing/embedding). In
    already in the target).
 3. BaseWidget target → General: iOS Deployment Target **17.0**.
 4. BaseWidget target → Signing & Capabilities: set your team; add capability
-   **App Groups** → `group.com.example.asteroidzen.widgets`; set the
+   **App Groups** → `group.com.deepfield.game.widgets`; set the
    entitlements file to `BaseWidget/BaseWidget.entitlements` if not picked up.
 5. App target → Signing & Capabilities: set your team; add the same App Group
    (the file `App/App.entitlements` is already wired via
@@ -59,14 +59,18 @@ the extension target itself (reliable signing/embedding). In
    app (this writes the feed), then add the **Base Window** widget; long-press
    → Edit Widget → pick an outpost; tap it to jump into that base.
 
-## Before store submission
+## Bundle id (final)
 
-- **Rename the placeholder bundle id** `com.example.asteroidzen`. It's
-  embedded in: `capacitor.config.json`, `android/app/build.gradle`
-  (namespace + applicationId) and the Java package dirs, iOS
-  `PRODUCT_BUNDLE_IDENTIFIER`, and the App Group string in THREE files —
-  `ios/App/App/WidgetFeedPlugin.swift`, `ios/App/BaseWidget/WidgetManifest.swift`,
-  and both `.entitlements` files. The URL scheme `asteroidzen` can stay.
+- The bundle id is **`com.deepfield.game`** (App Group
+  `group.com.deepfield.game.widgets`, URL scheme `deepfield`) — final, no
+  pre-store rename needed. If it ever changes, it lives in:
+  `capacitor.config.json`, `android/app/build.gradle` (namespace +
+  applicationId) and the Java package dirs, iOS `PRODUCT_BUNDLE_IDENTIFIER`,
+  and the App Group string in `ios/App/App/WidgetFeedPlugin.swift`,
+  `ios/App/BaseWidget/WidgetManifest.swift`, and both `.entitlements` files.
+- Because the id changed from the old placeholder, Xcode needs its signing
+  team + App Group re-selected once on both targets (new id = new
+  provisioning profile).
 
 ## Design notes / limits
 

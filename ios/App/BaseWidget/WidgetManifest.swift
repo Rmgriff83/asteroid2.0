@@ -1,10 +1,10 @@
 import Foundation
 
 /// Read side of the widget feed the app writes into the App Group container.
-/// Keep `appGroupId` in sync with App/WidgetFeedPlugin.swift (both embed the
-/// placeholder bundle id — rename together before store submission).
+/// Keep `appGroupId` in sync with App/WidgetFeedPlugin.swift — if the bundle
+/// id ever changes, both must change together.
 enum WidgetFeedStore {
-    static let appGroupId = "group.com.example.asteroidzen.widgets"
+    static let appGroupId = "group.com.deepfield.game.widgets"
 
     static var feedDir: URL? {
         FileManager.default

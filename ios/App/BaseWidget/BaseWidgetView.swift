@@ -8,7 +8,7 @@ struct BaseWidgetView: View {
         Group {
             if let base = entry.base {
                 baseView(base)
-                    .widgetURL(URL(string: "asteroidzen://base/\(base.panelKey)"))
+                    .widgetURL(URL(string: "deepfield://base/\(base.panelKey)"))
             } else {
                 emptyView
             }
@@ -89,7 +89,7 @@ struct BaseWidgetView: View {
 
     private var emptyView: some View {
         VStack(spacing: 6) {
-            Text("ASTEROID ZEN")
+            Text("DEEPFIELD")
                 .font(.system(size: 12, weight: .bold, design: .monospaced))
                 .kerning(3)
                 .foregroundStyle(Color(hex: "#7dffd8"))

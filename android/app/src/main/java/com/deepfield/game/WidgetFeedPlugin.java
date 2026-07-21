@@ -1,8 +1,8 @@
-package com.example.asteroidzen;
+package com.deepfield.game;
 
 import android.util.Base64;
 
-import com.example.asteroidzen.widget.BaseWidgetProvider;
+import com.deepfield.game.widget.BaseWidgetProvider;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;

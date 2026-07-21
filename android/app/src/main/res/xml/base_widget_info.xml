@@ -9,5 +9,5 @@
     android:resizeMode="horizontal|vertical"
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/widget_base"
-    android:configure="com.example.asteroidzen.widget.WidgetConfigActivity"
+    android:configure="com.deepfield.game.widget.WidgetConfigActivity"
     android:widgetCategory="home_screen" />

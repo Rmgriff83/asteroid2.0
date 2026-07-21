@@ -17,7 +17,7 @@ public class WidgetFeedPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "reloadWidgets", returnType: CAPPluginReturnPromise),
     ]
 
-    static let appGroupId = "group.com.example.asteroidzen.widgets"
+    static let appGroupId = "group.com.deepfield.game.widgets"
 
     private func feedDir() -> URL {
         let container =

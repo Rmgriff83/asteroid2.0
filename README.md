@@ -1,4 +1,4 @@
-# Asteroid Zen — Galaxy
+# Deepfield — Galaxy
 
 A calm, minimal, endlessly-explorable top-down space game: *No Man's Sky meets
 Asteroids*. Vue 3 + Phaser + Capacitor, all art drawn programmatically in a
@@ -64,5 +64,5 @@ npx cap open ios / android
 ```
 
 Landscape locked; safe areas handled; saves flush on background/pagehide.
-Before store submission: change the `com.example.asteroidzen` appId and
+Before store submission: change the `com.deepfield.game` appId and
 generate icons/splash with `@capacitor/assets`.

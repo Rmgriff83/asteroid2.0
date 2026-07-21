@@ -1,4 +1,4 @@
-package com.example.asteroidzen.widget;
+package com.deepfield.game.widget;
 
 import android.app.Activity;
 import android.appwidget.AppWidgetManager;
@@ -8,7 +8,7 @@ import android.widget.ArrayAdapter;
 import android.widget.ListView;
 import android.widget.TextView;
 
-import com.example.asteroidzen.R;
+import com.deepfield.game.R;
 
 import org.json.JSONArray;
 import org.json.JSONObject;

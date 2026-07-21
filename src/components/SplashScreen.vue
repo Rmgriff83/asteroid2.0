@@ -2,7 +2,7 @@
 import { onMounted, onBeforeUnmount } from 'vue'
 import { playerStore } from '../stores/playerStore'
 
-const TITLE = 'ASTEROID ZEN'
+const TITLE = 'DEEPFIELD'
 let timer = null
 
 function goMenu() {

@@ -1,15 +1,15 @@
-// Widget deep links: asteroidzen://base/<panelKey> drops the player straight
+// Widget deep links: deepfield://base/<panelKey> drops the player straight
 // into that base's interior (no flight session, no animations). The app's
 // FIRST url-scheme handler — native only.
 import { App as CapApp } from '@capacitor/app'
 import { Capacitor } from '@capacitor/core'
 import { playerStore } from '../stores/playerStore'
 
-export const URL_SCHEME = 'asteroidzen'
+export const URL_SCHEME = 'deepfield'
 
 // exported for headless testing (probes call this directly with a url)
 export function handleDeepLink(url) {
-  const m = /^asteroidzen:\/\/base\/(-?\d+,-?\d+)$/.exec(url || '')
+  const m = /^deepfield:\/\/base\/(-?\d+,-?\d+)$/.exec(url || '')
   if (!m) return false
   const base = playerStore.bases.find((b) => b.panelKey === m[1])
   if (!base) return false
